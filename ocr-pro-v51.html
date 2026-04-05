@@ -559,9 +559,14 @@ async function callGeminiRaw(prompt, _retry = 0) {
 
   // 429/503 → 자동 대기 재시도 (최대 5회, 지수 백오프)
   if (res.status === 429 || res.status === 503) {
-    if (_retry >= 5) throw new Error("API 할당량 초과 — 잠시 후 다시 시도해주세요");
     const errData = res._raw || {};
-    const retryMatch = (errData?.error?.message || "").match(/retry in ([\d.]+)/i);
+    const errMsg = errData?.error?.message || "";
+    // API 키 만료/유출 시 재시도 무의미 — 즉시 중단
+    if (/leaked|invalid|revoked|disabled|expired/i.test(errMsg)) {
+      throw new Error(`Gemini API 오류: ${errMsg}`);
+    }
+    if (_retry >= 2) throw new Error("API 할당량 초과 — 잠시 후 다시 시도해주세요");
+    const retryMatch = errMsg.match(/retry in ([\d.]+)/i);
     const waitSec = retryMatch
       ? Math.min(Math.ceil(parseFloat(retryMatch[1])) + 2, 90)
       : Math.min(10 * Math.pow(1.5, _retry), 60);  // 10s → 15s → 22s → 34s → 50s
@@ -1230,7 +1235,25 @@ async function aiSearchAll() {
             }
           }
 
-          // ── Step 2: Gemini AI 한글 음차/추론 변환 후 bizno 재시도 ──
+          // ── Step 2-a: 딕셔너리 기반 음차 변환 후 bizno 재시도 ──
+          if (!retryResult) {
+            const dictName = domainToKorean(rec.웹주소 || rec.회사명);
+            if (dictName) {
+              resultSpan.textContent = `🔤 음차 변환 재시도: "${dictName}"`;
+              console.log(`[Bizno 음차] "${rec.회사명}" → "${dictName}" 시도`);
+              try {
+                const dictBr = await callBiznoAPI(dictName);
+                if (dictBr && dictBr._matched) {
+                  retryResult = dictBr;
+                  console.log(`[Bizno 음차 성공] "${dictName}" → ${dictBr.상호명} (${dictBr.사업자번호})`);
+                }
+              } catch (dictErr) {
+                console.warn(`[Bizno 음차 실패] "${dictName}":`, dictErr.message);
+              }
+            }
+          }
+
+          // ── Step 2-b: Gemini AI 한글 음차/추론 변환 후 bizno 재시도 ──
           if (!retryResult && GCLOUD_API_KEY) {
             const nameSource = domainCandidates[0] || rec.회사명;
             resultSpan.textContent = `🤖 AI 한글 회사명 변환 중: "${nameSource}"`;
@@ -2643,10 +2666,13 @@ async function _resolveQRUrl(r){
     return null;
   })();
 
-  // [방법 B] Gemini AI
-  let aiPromise=null;
-  if(GCLOUD_API_KEY){
-    aiPromise=(async()=>{
+  // CORS 먼저 대기, 성공하면 AI 건너뜀
+  const corsName = await corsPromise;
+  if(corsName){r.회사명=corsName;console.log(`[QR URL→CORS] ${domain} → ${corsName}`)}
+  else{
+    // CORS 실패 → [방법 B] Gemini AI (순차)
+    let aiName=null;
+    if(GCLOUD_API_KEY){
       try{
         const prompt=`다음 웹사이트의 한국어 공식 회사명(법인명)을 알려주세요.
 URL: ${r.웹주소}
@@ -2658,26 +2684,108 @@ URL: ${r.웹주소}
 - ㈜, (주) 등 법인 접두사가 있으면 포함
 - 모르면 "UNKNOWN"
 - 회사명만 한 줄로 답변, 설명 없이`;
-        const aiName=(await callGeminiRaw(prompt)).trim().replace(/^["'\`]+|["'\`]+$/g,"").replace(/\n.*/,"").trim();
-        if(aiName&&!/UNKNOWN/i.test(aiName)&&aiName.length>=2&&aiName.length<=50) return aiName;
+        const raw=(await callGeminiRaw(prompt)).trim().replace(/^["'\`]+|["'\`]+$/g,"").replace(/\n.*/,"").trim();
+        if(raw&&!/UNKNOWN/i.test(raw)&&raw.length>=2&&raw.length<=50) aiName=raw;
       }catch(e){console.warn(`[QR AI 변환 실패] ${domain}:`,e.message)}
-      return null;
-    })();
+    }
+    if(aiName){r.회사명=aiName;console.log(`[QR URL→AI] ${domain} → ${aiName}`)}
+    else{
+      // 최종 폴백: 딕셔너리 기반 도메인→한글 음차 변환
+      const dictName=domainToKorean(r.웹주소||domain);
+      if(dictName){r.회사명=dictName;console.log(`[QR URL→음차] ${domain} → ${dictName}`)}
+      else{console.warn(`[QR URL] ${domain} — 한글 회사명 추출 실패, 도메인명 유지`)}
+    }
   }
-
-  const [corsName,aiName]=await Promise.all([corsPromise,aiPromise]);
-  if(corsName){r.회사명=corsName;console.log(`[QR URL→CORS] ${domain} → ${corsName}`)}
-  else if(aiName){r.회사명=aiName;console.log(`[QR URL→AI] ${domain} → ${aiName}`)}
-  else{console.warn(`[QR URL] ${domain} — 한글 회사명 추출 실패, 도메인명 유지`)}
   r.status="완료";
   toast(`📱 QR URL: ${r.회사명} 추출 완료`,"success");
 }
 
 /* ── HTML에서 한글 회사명 추출 (QR/독립 사용, processURLs 외부) ── */
+/* ── 영문 도메인 → 한글 회사명 음차 변환 (딕셔너리 기반 Greedy 분리) ── */
+const _ENG_KOR_DICT = {
+  holdings:'홀딩스', tech:'테크', soft:'소프트', global:'글로벌',
+  partners:'파트너스', partner:'파트너', systems:'시스템즈', system:'시스템',
+  solutions:'솔루션즈', solution:'솔루션', capital:'캐피탈',
+  energy:'에너지', group:'그룹', link:'링크', park:'파크',
+  network:'네트워크', networks:'네트워크스', media:'미디어',
+  design:'디자인', studio:'스튜디오', lab:'랩', labs:'랩스',
+  cloud:'클라우드', data:'데이터', bio:'바이오', pharma:'파마',
+  korea:'코리아', world:'월드', plus:'플러스', smart:'스마트',
+  mobile:'모바일', game:'게임', games:'게임즈', play:'플레이',
+  hub:'허브', office:'오피스', story:'스토리', flow:'플로우',
+  point:'포인트', star:'스타', power:'파워', blue:'블루',
+  green:'그린', next:'넥스트', inter:'인터', info:'인포',
+  net:'넷', pro:'프로', max:'맥스', one:'원', factory:'팩토리',
+  square:'스퀘어', space:'스페이스', bridge:'브릿지', bird:'버드',
+  venture:'벤처', invest:'인베스트', asset:'에셋', top:'탑',
+  construction:'건설', engineering:'엔지니어링',
+  electronics:'일렉트로닉스', chemical:'케미칼',
+  logistics:'로지스틱스', trading:'트레이딩',
+  consulting:'컨설팅', marketing:'마케팅',
+  financial:'파이낸셜', security:'시큐리티',
+  digital:'디지털', platform:'플랫폼', service:'서비스',
+  food:'푸드', health:'헬스', care:'케어', life:'라이프',
+  vision:'비전', future:'퓨처', dream:'드림', plan:'플랜',
+  build:'빌드', maker:'메이커', works:'웍스', craft:'크래프트',
+  line:'라인', way:'웨이', ware:'웨어',
+  man:'맨', land:'랜드', home:'홈', town:'타운', city:'시티',
+  win:'윈', pay:'페이', shop:'샵', mall:'몰', bay:'베이',
+  cast:'캐스트', port:'포트', gate:'게이트', key:'키',
+  core:'코어', edge:'엣지', peak:'피크', sync:'싱크',
+  able:'에이블', arts:'아츠', art:'아트', eye:'아이',
+  cube:'큐브', mind:'마인드', think:'씽크', seed:'씨드',
+  tree:'트리', leaf:'리프', stone:'스톤', iron:'아이언',
+  gold:'골드', silver:'실버', sun:'선', moon:'문',
+  rock:'록', wave:'웨이브', fire:'파이어', ice:'아이스',
+};
+
+function domainToKorean(domain) {
+  const name = domain.replace(/\.(com|co\.kr|kr|net|org|io|biz|go\.kr)$/i, "").replace(/^www\./i, "");
+  const lower = name.toLowerCase();
+  const result = [];
+  let i = 0;
+
+  while (i < lower.length) {
+    if (/\d/.test(lower[i])) {
+      let num = "";
+      while (i < lower.length && /\d/.test(lower[i])) num += lower[i++];
+      result.push({ orig: num, kor: num, matched: true });
+      continue;
+    }
+    let bestLen = 0, bestKor = null;
+    for (const [eng, kor] of Object.entries(_ENG_KOR_DICT)) {
+      if (lower.startsWith(eng, i) && eng.length > bestLen) { bestLen = eng.length; bestKor = kor; }
+    }
+    if (bestLen > 0) {
+      result.push({ orig: lower.slice(i, i + bestLen), kor: bestKor, matched: true });
+      i += bestLen;
+    } else {
+      let unmatch = "";
+      while (i < lower.length && !/\d/.test(lower[i])) {
+        let found = false;
+        for (const eng of Object.keys(_ENG_KOR_DICT)) {
+          if (lower.startsWith(eng, i)) { found = true; break; }
+        }
+        if (found) break;
+        unmatch += lower[i++];
+      }
+      result.push({ orig: unmatch, kor: null, matched: false });
+    }
+  }
+
+  const allMatched = result.every(r => r.matched);
+  const matchRate = result.filter(r => r.matched).length / result.length;
+  if (!allMatched && matchRate < 0.5) return null; // 변환율 너무 낮으면 무시
+  const korName = result.map(r => r.kor || r.orig).join("");
+  if (korName.length < 2 || korName === name) return null;
+  console.log(`[도메인→한글] ${domain} → ${korName} (${result.map(r=>`${r.orig}→${r.kor||'?'}`).join('+')})`);
+  return korName;
+}
+
 function _extractKorName(html){
   const clean=s=>(s||"").replace(/\s*(공식\s*(홈페이지|사이트|웹)|홈페이지|메인|HOME|MAIN)\s*/gi,"").trim();
   const isKor=s=>/[가-힣]/.test(s)&&s.length>=2&&s.length<=30;
-  const DESC_RE=/솔루션|전문|자동화|시스템|플랫폼|서비스|산업용|소프트웨어|제조|생산|공급|유통|판매|총판|대리점/;
+  const DESC_RE=/솔루션|전문|자동화|시스템|플랫폼|서비스|산업용|소프트웨어|제조|생산|공급|유통|판매|총판|대리점|스타트업|지원|금융|기업|업무|협업|그룹웨어|통합|관리/;
   const extractFirst=s=>{
     if(!s)return null;
     const parts=s.split(/\s*[-|:：·,]\s*/).map(p=>p.trim()).filter(p=>p.length>=2);
@@ -3136,7 +3244,7 @@ async function processURLs(urls){
     const clean = s => (s||"").replace(/\s*(공식\s*(홈페이지|사이트|웹)|홈페이지|메인|HOME|MAIN)\s*/gi,"").trim();
     const isKor = s => /[가-힣]/.test(s) && s.length >= 2 && s.length <= 30;
     /* 설명성 키워드 (회사명이 아닌 것 필터) */
-    const DESC_RE = /솔루션|전문|자동화|시스템|플랫폼|서비스|업체|산업용|소프트웨어|하드웨어|제조|생산|공급|유통|판매|총판|대리점|온라인|오프라인|쇼핑몰|홈페이지/;
+    const DESC_RE = /솔루션|전문|자동화|시스템|플랫폼|서비스|업체|산업용|소프트웨어|하드웨어|제조|생산|공급|유통|판매|총판|대리점|온라인|오프라인|쇼핑몰|홈페이지|스타트업|지원|금융|기업|업무|협업|그룹웨어|통합|관리/;
     /* title/og:title에서 회사명 파트 추출 */
     const extractNamePart = s => {
       if (!s) return null;
@@ -3255,10 +3363,19 @@ async function processURLs(urls){
       } catch { return null; }
     })();
 
-    // [방법 C] Gemini AI — CORS/프록시 모두 실패 시 폴백
-    let aiPromise = null;
-    if (GCLOUD_API_KEY) {
-      aiPromise = (async () => {
+    // CORS + 자체프록시 먼저 (빠름), 성공하면 AI 건너뜀
+    const [corsName, proxyName] = await Promise.all([corsPromise, selfProxyPromise]);
+
+    if (corsName) {
+      r.회사명 = corsName;
+      console.log(`[URL→CORS] ${domain} → ${corsName}`);
+    } else if (proxyName) {
+      r.회사명 = proxyName;
+      console.log(`[URL→프록시] ${domain} → ${proxyName}`);
+    } else {
+      // CORS/프록시 실패 → [방법 C] Gemini AI (순차, 필요할 때만)
+      let aiName = null;
+      if (GCLOUD_API_KEY) {
         try {
           const prompt = `다음 웹사이트의 한국어 공식 회사명(법인명)을 알려주세요.
 URL: ${r.웹주소}
@@ -3270,27 +3387,24 @@ URL: ${r.웹주소}
 - ㈜, (주) 등 법인 접두사가 있으면 포함
 - 모르면 "UNKNOWN"
 - 회사명만 한 줄로 답변, 설명 없이`;
-          const aiName = (await callGeminiRaw(prompt)).trim().replace(/^["'`]+|["'`]+$/g,"").replace(/\n.*/,"").trim();
-          if (aiName && !/UNKNOWN/i.test(aiName) && aiName.length >= 2 && aiName.length <= 50) return aiName;
+          const raw = (await callGeminiRaw(prompt)).trim().replace(/^["'`]+|["'`]+$/g,"").replace(/\n.*/,"").trim();
+          if (raw && !/UNKNOWN/i.test(raw) && raw.length >= 2 && raw.length <= 50) aiName = raw;
         } catch (e) { console.warn(`[AI 변환 실패] ${domain}:`, e.message); }
-        return null;
-      })();
-    }
+      }
 
-    // 3개 병렬 실행: CORS 프록시 우선, 자체 프록시, AI 순
-    const [corsName, proxyName, aiName] = await Promise.all([corsPromise, selfProxyPromise, aiPromise]);
-
-    if (corsName) {
-      r.회사명 = corsName;
-      console.log(`[URL→CORS] ${domain} → ${corsName}`);
-    } else if (proxyName) {
-      r.회사명 = proxyName;
-      console.log(`[URL→프록시] ${domain} → ${proxyName}`);
-    } else if (aiName) {
-      r.회사명 = aiName;
-      console.log(`[URL→AI] ${domain} → ${aiName}`);
-    } else {
-      console.warn(`[URL] ${domain} — 한글 회사명 추출 실패, 도메인명 유지`);
+      if (aiName) {
+        r.회사명 = aiName;
+        console.log(`[URL→AI] ${domain} → ${aiName}`);
+      } else {
+        // 최종 폴백: 딕셔너리 기반 도메인→한글 음차 변환
+        const dictName = domainToKorean(r.웹주소 || domain);
+        if (dictName) {
+          r.회사명 = dictName;
+          console.log(`[URL→음차] ${domain} → ${dictName}`);
+        } else {
+          console.warn(`[URL] ${domain} — 한글 회사명 추출 실패, 도메인명 유지`);
+        }
+      }
     }
     r.status = "완료";
   }
