@@ -1207,9 +1207,66 @@ async function aiSearchAll() {
           resultSpan.textContent = `✅ ${br.사업자번호} ${statusIcon}${br.사업상태 || "상태미확인"} ${extraInfo} [검증완료]`;
           resultSpan.style.color = "var(--grn)";
         } else {
-          // bizno 한글명 미확인 → 3단계 재시도: ① 영문 도메인 ② AI 음차 변환 ③ AI 회사명 추론
+          // bizno 한글명 미확인 → 다단계 재시도
           let retryResult = null;
           const domainCandidates = [];
+
+          // ── Step 0: 웹사이트 CORS fetch → 회사명 보정 + 직접 추출 → Bizno 재시도 ──
+          if (!retryResult && rec.웹주소) {
+            setAiStep(logItem, "search2");
+            resultSpan.textContent = `🔗 웹사이트에서 회사명 확인 중...`;
+            try {
+              const html = await fetchWebpageHTML(rec.웹주소);
+              if (html) {
+                // (a) HTML에서 사업자번호/대표자 등 직접 추출
+                const directInfo = extractCompanyInfoFromHTML(html);
+                if (directInfo) {
+                  if (directInfo.사업자번호 && !rec.사업자번호) rec.사업자번호 = directInfo.사업자번호;
+                  if (directInfo.대표자 && !rec.대표자) rec.대표자 = directInfo.대표자;
+                  if (directInfo.주소 && !rec.주소) rec.주소 = directInfo.주소;
+                  if (directInfo.전화 && !rec.전화) rec.전화 = directInfo.전화;
+                  if (directInfo.이메일 && !rec.이메일) rec.이메일 = directInfo.이메일;
+                  if (directInfo.업종 && !rec.업종) rec.업종 = directInfo.업종;
+                  console.log(`[웹직접추출] ${rec.회사명}: 사업자번호=${directInfo.사업자번호||"없음"}, 대표자=${directInfo.대표자||"없음"}`);
+                }
+
+                // (b) HTML에서 정식 한글 회사명 추출
+                const webKorName = _extractKorName(html);
+                if (webKorName && webKorName !== rec.회사명) {
+                  console.log(`[웹회사명보정] "${rec.회사명}" → "${webKorName}"`);
+                  resultSpan.textContent = `🔗 웹사이트 회사명 "${webKorName}" → Bizno 재검색...`;
+                  rec.회사명 = webKorName;  // 회사명 보정
+                  try {
+                    const webBr = await callBiznoAPI(webKorName);
+                    if (webBr && webBr._matched) {
+                      retryResult = webBr;
+                      console.log(`[Bizno 웹보정 성공] "${webKorName}" → ${webBr.상호명} (${webBr.사업자번호})`);
+                    }
+                  } catch (webErr) {
+                    console.warn(`[Bizno 웹보정 실패] "${webKorName}":`, webErr.message);
+                  }
+                }
+
+                // (c) 직접 추출한 사업자번호가 있고 Bizno 미매칭이면 → 사업자번호로 직접 확정
+                if (!retryResult && directInfo?.사업자번호) {
+                  console.log(`[웹직접] 사업자번호 ${directInfo.사업자번호} 직접 확보 (Bizno 미경유)`);
+                  retryResult = {
+                    사업자번호: directInfo.사업자번호,
+                    상호명: webKorName || rec.회사명,
+                    대표자: directInfo.대표자 || "",
+                    도로명주소: directInfo.주소 || "",
+                    전화번호: directInfo.전화 || "",
+                    사업상태: "",  // 국세청 검증에서 확인
+                    설립일: "",
+                    _matched: true,
+                    _webDirect: true  // 웹직접 추출 플래그
+                  };
+                }
+              }
+            } catch (webFetchErr) {
+              console.warn(`[웹사이트 접속 실패] ${rec.웹주소}:`, webFetchErr.message);
+            }
+          }
 
           // ── Step 1: 영문 도메인명으로 bizno 재시도 (최대 3회) ──
           if (rec.웹주소) {
@@ -1351,7 +1408,8 @@ ${rec.웹주소 ? `URL: ${rec.웹주소}` : ""}
             logItem.classList.remove("active"); logItem.classList.add("done");
             const statusIcon = retryResult.사업상태 === "계속사업자" ? "🟢" : retryResult.사업상태 === "휴업자" ? "🟡" : retryResult.사업상태 === "폐업자" ? "🔴" : "⚪";
             const extraInfo = [rec.대표자 ? `대표:${rec.대표자}` : "", retryResult.설립일 ? `설립:${retryResult.설립일}` : ""].filter(Boolean).join(" ");
-            resultSpan.textContent = `✅ ${retryResult.사업자번호} ${statusIcon}${retryResult.사업상태 || ""} ${extraInfo} [재시도 성공]`;
+            const retryTag = retryResult._webDirect ? "웹직접 추출" : "재시도 성공";
+            resultSpan.textContent = `✅ ${retryResult.사업자번호} ${statusIcon}${retryResult.사업상태 || ""} ${extraInfo} [${retryTag}]`;
             resultSpan.style.color = "var(--grn)";
           } else {
             // Bizno 완전 실패 → Gemini AI로 전체 검색 시도
@@ -1426,7 +1484,7 @@ ${rec.웹주소 ? `URL: ${rec.웹주소}` : ""}
         const logItem = $(`#ai-${rec.id}`);
         if (logItem) {
           const resultSpan = logItem.querySelector(".ai-result");
-          if (resultSpan) resultSpan.textContent = resultSpan.textContent.replace("[검증완료]", "🔄 국세청 확인 중...").replace("[재시도 성공]", "🔄 국세청 확인 중...").replace("[AI검색-bizno미확인]", "🔄 국세청 확인 중...");
+          if (resultSpan) resultSpan.textContent = resultSpan.textContent.replace("[검증완료]", "🔄 국세청 확인 중...").replace("[재시도 성공]", "🔄 국세청 확인 중...").replace("[웹직접 추출]", "🔄 국세청 확인 중...").replace("[AI검색-bizno미확인]", "🔄 국세청 확인 중...");
         }
       }
 
