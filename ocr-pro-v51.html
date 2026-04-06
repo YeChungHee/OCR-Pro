@@ -327,6 +327,10 @@ function googleSearch(rec){
   const q=[];
   if(rec.회사명)q.push(rec.회사명);
   if(rec.대표자)q.push(rec.대표자);
+  /* 웹주소에서 도메인명 추출하여 검색어 보강 */
+  if(rec.웹주소 && !rec.회사명){
+    try{const host=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"https://"+rec.웹주소).hostname.replace("www.","");q.push(host)}catch{}
+  }
   if(!q.length)q.push("기업정보");
   q.push("사업자번호 대표 업종");
   const url=`https://www.google.com/search?q=${encodeURIComponent(q.join(" "))}`;
@@ -3433,8 +3437,10 @@ function exportExcel(){
     "Organization - 대표자명":r.대표자,
     "Organization - 담당직원":r.담당자,
     "Organization - 담당직함":r.담당직함,
-    "People - 이메일":r.이메일,
     "Organization - 전화":r.전화||r.휴대폰,
+    "People - 이름":r.담당자,
+    "People - 전화":r.휴대폰||r.전화,
+    "People - 이메일":r.이메일,
     "Organization - 주소":r.주소,
     "Organization - 웹 주소":r.웹주소,
     "Organization - 기업형태":r.기업형태,
@@ -3445,8 +3451,6 @@ function exportExcel(){
     "Organization - 매출(억)":r.매출,
     "Organization - 영업이익":r.영업이익,
     "Organization - 설립일자":r.설립일||"",
-    "People - 이름":r.담당자,
-    "People - 전화":r.휴대폰||r.전화,
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
   const wb=XLSX.utils.book_new();
