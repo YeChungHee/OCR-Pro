@@ -327,9 +327,12 @@ function googleSearch(rec){
   const q=[];
   if(rec.회사명)q.push(rec.회사명);
   if(rec.대표자)q.push(rec.대표자);
-  /* 웹주소에서 도메인명 추출하여 검색어 보강 */
-  if(rec.웹주소 && !rec.회사명){
-    try{const host=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"https://"+rec.웹주소).hostname.replace("www.","");q.push(host)}catch{}
+  /* 웹주소 도메인 항상 추가 (회사명이 제품명/슬로건일 수 있으므로) */
+  if(rec.웹주소){
+    try{
+      const host=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"https://"+rec.웹주소).hostname.replace("www.","");
+      if(!q.includes(host))q.push(host);
+    }catch{}
   }
   if(!q.length)q.push("기업정보");
   q.push("사업자번호 대표 업종");
