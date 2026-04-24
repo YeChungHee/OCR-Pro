@@ -5118,8 +5118,18 @@ async function fetchAllExhibitorsFromFile() {
   }
 }
 
-// 이벤트 바인딩
-document.addEventListener('DOMContentLoaded', () => {
+function setExpoFile(file) {
+  expoSelectedFile = file;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const fmtMap = { jpg:'🖼 이미지 (Vision AI)', jpeg:'🖼 이미지 (Vision AI)', png:'🖼 이미지 (Vision AI)', webp:'🖼 이미지 (Vision AI)', gif:'🖼 이미지', bmp:'🖼 이미지', pdf:'📄 PDF (텍스트 추출)', xlsx:'📊 Excel', xls:'📊 Excel', csv:'📊 CSV' };
+  const fmtLabel = fmtMap[ext] || '📂 파일';
+  const info = $('#expoFileInfo');
+  if (info) { info.style.display = 'block'; info.innerHTML = `✅ <strong>${esc(file.name)}</strong> — ${fmtLabel} · ${(file.size/1024).toFixed(0)}KB`; }
+  toast(`파일 선택됨: ${file.name}`, 'success');
+}
+
+// 이벤트 바인딩 (스크립트가 <body> 하단에 있어 DOM이 이미 로드됨 — DOMContentLoaded 불필요)
+{
   // 입력 모드 전환 (URL / 파일)
   document.querySelectorAll('.expo-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5149,15 +5159,6 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', () => { if (fileInput.files[0]) setExpoFile(fileInput.files[0]); });
   }
 
-  function setExpoFile(file) {
-    expoSelectedFile = file;
-    const ext = file.name.split('.').pop().toLowerCase();
-    const fmtMap = { jpg:'🖼 이미지 (Vision AI)', jpeg:'🖼 이미지 (Vision AI)', png:'🖼 이미지 (Vision AI)', webp:'🖼 이미지 (Vision AI)', gif:'🖼 이미지', bmp:'🖼 이미지', pdf:'📄 PDF (텍스트 추출)', xlsx:'📊 Excel', xls:'📊 Excel', csv:'📊 CSV' };
-    const fmtLabel = fmtMap[ext] || '📂 파일';
-    const info = $('#expoFileInfo');
-    if (info) { info.style.display = 'block'; info.innerHTML = `✅ <strong>${esc(file.name)}</strong> — ${fmtLabel} · ${(file.size/1024).toFixed(0)}KB`; }
-    toast(`파일 선택됨: ${file.name}`, 'success');
-  }
 
   // URL 입력 시 포맷 힌트
   $('#expoUrl')?.addEventListener('input', () => {
