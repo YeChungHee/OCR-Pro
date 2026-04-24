@@ -4218,18 +4218,18 @@ async function pushToSalesmap() {
       // ── 1. 회사(organization) 생성 또는 중복 확인 ──
       // fieldList 이름은 세일즈맵 워크스페이스 커스텀 필드명과 일치해야 함
       const fieldList = [];
-      if (r.사업자번호) fieldList.push({ name: "사업자번호",    value: r.사업자번호 });
-      if (r.대표자)    fieldList.push({ name: "대표자명",      value: r.대표자 });
-      if (r.업종)      fieldList.push({ name: "업종",          value: r.업종 });
-      if (r.기업형태)  fieldList.push({ name: "기업형태",      value: r.기업형태 });
-      if (r.담당자)    fieldList.push({ name: "담당직원",      value: r.담당자 });
-      if (r.담당직함)  fieldList.push({ name: "담당직함",      value: r.담당직함 });
-      if (r.매출)      fieldList.push({ name: "매출(억)",      value: String(r.매출) });
-      if (r.설립일)    fieldList.push({ name: "설립일자",      value: r.설립일 });
-      if (r.부스번호)  fieldList.push({ name: "부스번호",      value: r.부스번호 });
-      // 유입경로 (기본값 = 오프/행사)
-      fieldList.push({ name: "유입경로", value: r.source === "전시회" ? "전시회" : "오프/행사" });
-      if (exh) fieldList.push({ name: "유입경로_상세", value: r.부스번호 ? `${exh} ${r.부스번호}` : exh });
+      if (r.사업자번호) fieldList.push({ name: "사업자번호",    stringValue: r.사업자번호 });
+      if (r.대표자)    fieldList.push({ name: "대표자명",      stringValue: r.대표자 });
+      if (r.업종)      fieldList.push({ name: "업종",          stringValue: r.업종 });
+      if (r.기업형태)  fieldList.push({ name: "기업형태",      stringValue: r.기업형태 });
+      if (r.담당자)    fieldList.push({ name: "담당직원",      stringValue: r.담당자 });
+      fieldList.push({ name: "담당직함",      stringValue: r.담당직함 || "" });
+      if (r.매출)      fieldList.push({ name: "매출(억)",      stringValue: String(r.매출) });
+      if (r.설립일)    fieldList.push({ name: "설립일자",      stringValue: r.설립일 });
+      if (r.부스번호)  fieldList.push({ name: "부스번호",      stringValue: r.부스번호 });
+      // 유입경로 (기본값 = 오프/행사) — 필수 항목
+      fieldList.push({ name: "유입경로", stringValue: r.source === "전시회" ? "전시회" : "오프/행사" });
+      if (exh) fieldList.push({ name: "유입경로_상세", stringValue: r.부스번호 ? `${exh} ${r.부스번호}` : exh });
 
       const orgBody = {
         name,
@@ -4272,7 +4272,7 @@ async function pushToSalesmap() {
       if (r.담당자 && r.담당자.trim()) {
         const peopleFieldList = [];
         // 샘플: People - 직함
-        if (r.담당직함) peopleFieldList.push({ name: "직함", value: r.담당직함 });
+        peopleFieldList.push({ name: "직함", stringValue: r.담당직함 || "" });
         const peopleBody = {
           name: r.담당자.trim(),
           ...(r.이메일   ? { email:  r.이메일 }   : {}),
