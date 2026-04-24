@@ -258,6 +258,21 @@ if(location.protocol==="file:"){
       </div>
     </div>
 
+    <!-- 세일즈맵 API 토큰 -->
+    <div class="cfg-group">
+      <div class="cfg-label">
+        🗺 세일즈맵 API 토큰
+        <span class="cfg-badge cfg-badge-opt">선택</span>
+      </div>
+      <input id="cfg-salesmap" class="cfg-input" type="password" placeholder="세일즈맵 발급 API 토큰" autocomplete="off" spellcheck="false"/>
+      <div class="cfg-hint">
+        추출된 데이터를 세일즈맵에 직접 등록하는 데 사용<br>
+        세일즈맵 로그인 → 개인설정 → 연동 → API 토큰 발급<br>
+        <a href="https://developers.salesmap.kr/api-reference/authentication" target="_blank" style="color:var(--pri)">developers.salesmap.kr</a>
+      </div>
+      <div class="cfg-status" id="cfg-salesmap-status"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-out" onclick="closeSettings()">취소</button>
       <button class="btn btn-pri" onclick="saveSettings()">💾 저장 및 적용</button>
@@ -450,6 +465,7 @@ if(location.protocol==="file:"){
   <button id="searchBtn" class="btn btn-pri" disabled>🤖 선택 후 AI 검색</button>
   <button id="biznoVerifyBtn" class="btn btn-out" disabled title="Google Search Grounding으로 사업자번호 교차검증" style="font-size:12px">🔄 사업자번호 재확인</button>
   <button id="exportBtn" class="btn btn-grn" disabled>⬇ 세일즈맵 엑셀 <span class="cnt-badge" id="exportCnt">(0건)</span></button>
+  <button id="salesmapPushBtn" class="btn btn-vio" disabled title="추출된 데이터를 세일즈맵 CRM에 직접 등록">📤 세일즈맵 등록 <span class="cnt-badge" id="salesmapCnt">(0건)</span></button>
   <button id="resetBtn" class="btn btn-red" disabled>초기화</button>
   <div style="margin-left:auto;font-size:13px;color:var(--sub);font-weight:600" id="counter">0/0</div>
 </div>
@@ -475,6 +491,17 @@ if(location.protocol==="file:"){
   <div id="aiSearchLog" class="ai-log">
     <!-- Each record gets a progress line -->
   </div>
+</div>
+
+<!-- 세일즈맵 등록 진행 패널 -->
+<div id="salesmapPanel" class="pbox hidden">
+  <div class="ptop">
+    <span class="plbl">🗺 세일즈맵 등록 중...</span>
+    <span class="pnum" id="salesmapNum">0/0</span>
+  </div>
+  <div class="pbar"><div class="pfill" id="salesmapBar" style="width:0%"></div></div>
+  <div id="salesmapLog" style="margin-top:10px;font-size:12px;max-height:120px;overflow-y:auto;color:var(--sub);line-height:1.8"></div>
+  <div id="salesmapResult" style="margin-top:8px;font-size:13px;font-weight:600;display:none"></div>
 </div>
 
 <!-- 편집 안내 -->
@@ -510,10 +537,11 @@ if(location.protocol==="file:"){
 /* ═══════════════════════════════════════════════════
    🔑 API Key 관리 — localStorage 기반 (하드코딩 없음)
    ═══════════════════════════════════════════════════ */
-const getGcloudKey  = () => localStorage.getItem("ocr_gcloud_key")  || "";
-const getBiznoKey   = () => localStorage.getItem("ocr_bizno_key")   || "";
-const getNtsKey     = () => localStorage.getItem("ocr_nts_key")     || "";
-const getWorkerUrl  = () => localStorage.getItem("ocr_worker_url")  || "";
+const getGcloudKey      = () => localStorage.getItem("ocr_gcloud_key")      || "";
+const getBiznoKey       = () => localStorage.getItem("ocr_bizno_key")       || "";
+const getNtsKey         = () => localStorage.getItem("ocr_nts_key")         || "";
+const getWorkerUrl      = () => localStorage.getItem("ocr_worker_url")      || "";
+const getSalesmapToken  = () => localStorage.getItem("ocr_salesmap_token")  || "";
 /* 전역 속성으로 등록 — 기존 코드 호환 */
 Object.defineProperty(window, "GCLOUD_API_KEY",   { get: getGcloudKey,  configurable: true });
 Object.defineProperty(window, "BIZNO_API_KEY",    { get: getBiznoKey,   configurable: true });
@@ -2009,7 +2037,9 @@ function render(){
 
   $("#counter").textContent=`${ck}/${tot}`;
   $("#exportCnt").textContent=`(${tot}건)`;
+  $("#salesmapCnt").textContent=`(${tot}건)`;
   $("#searchBtn").disabled=!ck; $("#exportBtn").disabled=!tot; $("#resetBtn").disabled=!tot;
+  $("#salesmapPushBtn").disabled=!tot;
   $("#searchBtn").innerHTML=ck>0?`🤖 선택 ${ck}건 AI 검색`:"🤖 선택 후 AI 검색";
   const vBtn=$("#biznoVerifyBtn");
   if(vBtn){
@@ -4084,6 +4114,193 @@ function exportExcel(){
 }
 
 /* ═══════════════════════════════════════════════════
+   🗺 세일즈맵 API 직접 등록
+   ═══════════════════════════════════════════════════ */
+const SALESMAP_BASE = "https://api.salesmap.kr";
+
+async function salesmapFetch(path, method, body, token) {
+  const workerUrl = getWorkerUrl();
+  const targetUrl = SALESMAP_BASE + path;
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`
+  };
+
+  // Cloudflare Worker 프록시 경유 (CORS 우회)
+  if (workerUrl) {
+    const res = await fetch(workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: targetUrl, method, headers, body })
+    });
+    if (!res.ok) throw new Error(`Worker ${res.status}: ${await res.text()}`);
+    return res.json();
+  }
+
+  // 직접 호출 (Worker 미설정 시)
+  const res = await fetch(targetUrl, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`${res.status}: ${errText}`);
+  }
+  return res.json();
+}
+
+async function salesmapFindOrg(name, token) {
+  // 이름으로 기존 회사 검색 (중복 방지)
+  try {
+    const data = await salesmapFetch(
+      `/v2/organization?name=${encodeURIComponent(name)}&limit=5`,
+      "GET", null, token
+    );
+    const list = data?.data || data?.list || data?.items || data?.organizations || [];
+    return list.find(o => (o.name||"").trim() === name.trim()) || null;
+  } catch(e) { return null; }
+}
+
+async function pushToSalesmap() {
+  const token = getSalesmapToken();
+  if (!token) {
+    if (confirm("세일즈맵 API 토큰이 설정되어 있지 않습니다.\n⚙️ 설정에서 토큰을 입력하시겠습니까?")) {
+      openSettings();
+    }
+    return;
+  }
+
+  const targets = records.filter(r => r.회사명 && r.회사명.trim());
+  if (!targets.length) { toast("등록할 업체가 없습니다.", "error"); return; }
+
+  const exh = ($("#exhInput")?.value || "").trim();
+  const panel = $("#salesmapPanel");
+  const logEl = $("#salesmapLog");
+  const barEl = $("#salesmapBar");
+  const numEl = $("#salesmapNum");
+  const resEl = $("#salesmapResult");
+
+  panel.classList.remove("hidden");
+  resEl.style.display = "none";
+  logEl.innerHTML = "";
+  barEl.style.width = "0%";
+  numEl.textContent = `0/${targets.length}`;
+  $("#salesmapPushBtn").disabled = true;
+
+  let okCount = 0, dupCount = 0, errCount = 0;
+
+  for (let i = 0; i < targets.length; i++) {
+    const r = targets[i];
+    const pct = Math.round(((i + 1) / targets.length) * 100);
+    barEl.style.width = pct + "%";
+    numEl.textContent = `${i + 1}/${targets.length}`;
+
+    const name = (r.회사명 || "").trim();
+    const logLine = document.createElement("div");
+    logLine.textContent = `⏳ [${i+1}/${targets.length}] ${name} 처리 중...`;
+    logEl.appendChild(logLine);
+    logEl.scrollTop = logEl.scrollHeight;
+
+    try {
+      // ── 1. 회사(organization) 생성 또는 중복 확인 ──
+      // fieldList 이름은 세일즈맵 워크스페이스 커스텀 필드명과 일치해야 함
+      const fieldList = [];
+      if (r.사업자번호) fieldList.push({ name: "사업자번호",    value: r.사업자번호 });
+      if (r.대표자)    fieldList.push({ name: "대표자명",      value: r.대표자 });
+      if (r.업종)      fieldList.push({ name: "업종",          value: r.업종 });
+      if (r.기업형태)  fieldList.push({ name: "기업형태",      value: r.기업형태 });
+      if (r.담당자)    fieldList.push({ name: "담당직원",      value: r.담당자 });
+      if (r.담당직함)  fieldList.push({ name: "담당직함",      value: r.담당직함 });
+      if (r.매출)      fieldList.push({ name: "매출(억)",      value: String(r.매출) });
+      if (r.설립일)    fieldList.push({ name: "설립일자",      value: r.설립일 });
+      if (r.부스번호)  fieldList.push({ name: "부스번호",      value: r.부스번호 });
+      // 유입경로 (기본값 = 오프/행사)
+      fieldList.push({ name: "유입경로", value: r.source === "전시회" ? "전시회" : "오프/행사" });
+      if (exh) fieldList.push({ name: "유입경로_상세", value: r.부스번호 ? `${exh} ${r.부스번호}` : exh });
+
+      const orgBody = {
+        name,
+        ...(r.웹주소  ? { website: r.웹주소 }  : {}),
+        ...(r.전화    ? { phone:   r.전화 }    : (r.휴대폰 ? { phone: r.휴대폰 } : {})),
+        ...(r.주소    ? { address: r.주소 }    : {}),
+        ...(fieldList.length ? { fieldList } : {})
+      };
+
+      let orgId = null;
+      let isDup = false;
+
+      try {
+        const orgRes = await salesmapFetch("/v2/organization", "POST", orgBody, token);
+        orgId = orgRes?.data?.id || orgRes?.id || orgRes?.organizationId || null;
+        okCount++;
+        logLine.textContent = `✅ [${i+1}] ${name} 등록 완료${orgId ? ` (ID:${orgId})` : ""}`;
+      } catch(orgErr) {
+        // 중복 이름 오류(409) → 기존 회사 찾아서 업데이트
+        if (orgErr.message?.includes("409") || orgErr.message?.toLowerCase().includes("duplicate") || orgErr.message?.includes("이미")) {
+          const existing = await salesmapFindOrg(name, token);
+          if (existing) {
+            orgId = existing.id || existing.organizationId;
+            // 기존 회사 업데이트 (PATCH/POST same ID)
+            try {
+              await salesmapFetch(`/v2/organization/${orgId}`, "POST", orgBody, token);
+            } catch(_) {}
+            dupCount++;
+            logLine.textContent = `⚠️ [${i+1}] ${name} 중복 — 정보 업데이트 (ID:${orgId})`;
+          } else {
+            dupCount++;
+            logLine.textContent = `⚠️ [${i+1}] ${name} 중복 처리됨`;
+          }
+        } else {
+          throw orgErr;
+        }
+      }
+
+      // ── 2. 담당자(people) 생성 ──
+      if (r.담당자 && r.담당자.trim()) {
+        const peopleFieldList = [];
+        // 샘플: People - 직함
+        if (r.담당직함) peopleFieldList.push({ name: "직함", value: r.담당직함 });
+        const peopleBody = {
+          name: r.담당자.trim(),
+          ...(r.이메일   ? { email:  r.이메일 }   : {}),
+          ...(r.휴대폰   ? { phone:  r.휴대폰 }   : (r.전화 ? { phone: r.전화 } : {})),
+          ...(orgId      ? { organizationId: orgId } : {}),
+          ...(peopleFieldList.length ? { fieldList: peopleFieldList } : {})
+        };
+        try {
+          await salesmapFetch("/v2/people", "POST", peopleBody, token);
+        } catch(pErr) {
+          // 담당자 중복은 무시 (메인 오류 아님)
+          console.warn("People 등록 실패:", pErr.message);
+        }
+      }
+
+    } catch(e) {
+      errCount++;
+      logLine.textContent = `❌ [${i+1}] ${name} 실패: ${e.message}`;
+      logLine.style.color = "var(--red)";
+    }
+
+    // Rate limit 방지 (300ms 간격)
+    if (i < targets.length - 1) await new Promise(r => setTimeout(r, 350));
+  }
+
+  // ── 완료 결과 ──
+  barEl.style.width = "100%";
+  numEl.textContent = `${targets.length}/${targets.length}`;
+  resEl.style.display = "block";
+  resEl.innerHTML = `
+    <span style="color:var(--grn)">✅ 등록 ${okCount}건</span>&nbsp;&nbsp;
+    <span style="color:var(--org)">⚠️ 중복업데이트 ${dupCount}건</span>&nbsp;&nbsp;
+    <span style="color:var(--red)">❌ 실패 ${errCount}건</span>
+  `;
+  $("#salesmapPushBtn").disabled = false;
+  toast(`📤 세일즈맵 등록 완료 — 등록 ${okCount}건 / 중복 ${dupCount}건 / 실패 ${errCount}건`,
+    errCount > 0 ? "" : "success");
+}
+
+/* ═══════════════════════════════════════════════════
    이벤트 바인딩
    ═══════════════════════════════════════════════════ */
 // 탭 전환
@@ -4216,6 +4433,9 @@ $("#aiSearchStop").onclick = () => {
 
 // 🔄 사업자번호 교차검증 버튼
 $("#biznoVerifyBtn")?.addEventListener("click", verifyAllBizno);
+
+// 📤 세일즈맵 직접 등록 버튼
+$("#salesmapPushBtn")?.addEventListener("click", pushToSalesmap);
 
 render();
 
@@ -4990,16 +5210,19 @@ function openSettings() {
   const modal = $("#settingsModal");
   modal.classList.remove("hidden");
   // 현재 저장된 값 로드
-  const gk = getGcloudKey(), bk = getBiznoKey(), nk = getNtsKey(), wu = getWorkerUrl();
-  $("#cfg-gcloud").value = gk;
-  $("#cfg-bizno").value  = bk;
-  $("#cfg-nts").value    = nk;
-  $("#cfg-worker").value = wu;
+  const gk = getGcloudKey(), bk = getBiznoKey(), nk = getNtsKey(), wu = getWorkerUrl(), sk = getSalesmapToken();
+  $("#cfg-gcloud").value    = gk;
+  $("#cfg-bizno").value     = bk;
+  $("#cfg-nts").value       = nk;
+  $("#cfg-worker").value    = wu;
+  $("#cfg-salesmap").value  = sk;
   // 상태 표시
   $("#cfg-gcloud-status").className = "cfg-status " + (gk ? "ok" : "err");
   $("#cfg-gcloud-status").textContent = gk ? "✅ 설정됨" : "❌ 미설정 — Vision OCR 및 Gemini AI 사용 불가";
   $("#cfg-worker-status").className = "cfg-status " + (wu ? "ok" : "warn");
   $("#cfg-worker-status").textContent = wu ? "✅ " + wu : "⚠️ 미설정 — 직접 호출 모드 (CORS 제한 주의)";
+  $("#cfg-salesmap-status").className = "cfg-status " + (sk ? "ok" : "warn");
+  $("#cfg-salesmap-status").textContent = sk ? "✅ 설정됨 — 세일즈맵 직접 등록 가능" : "⚠️ 미설정 — 세일즈맵 등록 버튼 사용 불가";
 }
 
 function closeSettings() {
@@ -5011,6 +5234,7 @@ function saveSettings() {
   const bk = $("#cfg-bizno").value.trim();
   const nk = $("#cfg-nts").value.trim();
   const wu = $("#cfg-worker").value.trim().replace(/\/$/, ""); // 후행 슬래시 제거
+  const sk = $("#cfg-salesmap").value.trim();
 
   if (gk) localStorage.setItem("ocr_gcloud_key", gk);
   else    localStorage.removeItem("ocr_gcloud_key");
@@ -5023,6 +5247,9 @@ function saveSettings() {
 
   if (wu) localStorage.setItem("ocr_worker_url", wu);
   else    localStorage.removeItem("ocr_worker_url");
+
+  if (sk) localStorage.setItem("ocr_salesmap_token", sk);
+  else    localStorage.removeItem("ocr_salesmap_token");
 
   closeSettings();
   checkApiKeyBanner();
