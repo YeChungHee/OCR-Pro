@@ -1936,6 +1936,7 @@ ${rec.웹주소 ? `URL: ${rec.웹주소}` : ""}
           await sleep(backoffSec * 1000);
         }
       }
+      } // end 결과 적용 블록
       render();
       updateQueueProgress(completed, targets.length);
     } // end while (큐 워커)
