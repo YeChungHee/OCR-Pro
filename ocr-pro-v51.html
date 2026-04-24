@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.1 — 다중 포맷 참가업체 수집 + 세일즈맵 API 연동</title>
+<title>OCR Pro v9.2 — 다중 포맷 참가업체 수집 + 세일즈맵 API 연동</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -171,7 +171,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.1</span>
+  <span class="ver">v9.2</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
 </div>
@@ -204,31 +204,44 @@ if(location.protocol==="file:"){
       서버로 전송되지 않으며, 소스코드에도 포함되지 않습니다.
     </div>
 
-    <!-- Google Cloud API Key -->
+    <!-- Google Vision API Key -->
     <div class="cfg-group">
       <div class="cfg-label">
-        🔑 Google Cloud API Key
-        <span class="cfg-badge cfg-badge-req">필수</span>
+        👁 Google Vision API Key
+        <span class="cfg-badge cfg-badge-req">필수 — OCR</span>
       </div>
-      <input id="cfg-gcloud" class="cfg-input" type="password" placeholder="AIzaSy..." autocomplete="off" spellcheck="false"/>
+      <input id="cfg-vision" class="cfg-input" type="password" placeholder="AIzaSy... (Vision API 전용)" autocomplete="off" spellcheck="false"/>
       <div class="cfg-hint">
-        Google Cloud Console → API & Services → 사용자 인증 정보 → API 키 생성<br>
-        Vision API + Generative Language API 두 가지 모두 활성화 필요<br>
-        <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--pri)">console.cloud.google.com</a>
+        명함·이미지 OCR에 사용 · Cloud Vision API 활성화 필요<br>
+        <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--pri)">console.cloud.google.com</a> → API 키 → Vision API만 허용
       </div>
-      <div class="cfg-status" id="cfg-gcloud-status"></div>
+      <div class="cfg-status" id="cfg-vision-status"></div>
     </div>
 
-    <!-- Cloudflare Worker URL -->
+    <!-- Gemini API Key -->
+    <div class="cfg-group">
+      <div class="cfg-label">
+        🤖 Gemini API Key
+        <span class="cfg-badge cfg-badge-req">필수 — AI 검색</span>
+      </div>
+      <input id="cfg-gemini" class="cfg-input" type="password" placeholder="AIzaSy... (Gemini 전용)" autocomplete="off" spellcheck="false"/>
+      <div class="cfg-hint">
+        기업정보 AI 검색·사업자번호 조회에 사용 · Generative Language API 활성화 필요<br>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--pri)">aistudio.google.com</a> 에서 무료 발급 가능
+      </div>
+      <div class="cfg-status" id="cfg-gemini-status"></div>
+    </div>
+
+    <!-- Cloudflare Worker URL — 세일즈맵 등록 전용 -->
     <div class="cfg-group">
       <div class="cfg-label">
         🌐 Cloudflare Worker URL
-        <span class="cfg-badge cfg-badge-opt">선택</span>
+        <span class="cfg-badge cfg-badge-opt">세일즈맵 등록 전용</span>
       </div>
       <input id="cfg-worker" class="cfg-input" type="text" placeholder="https://ocr-pro-proxy.YOUR_ACCOUNT.workers.dev" autocomplete="off" spellcheck="false"/>
       <div class="cfg-hint">
-        CORS 우회 프록시. 미설정 시 브라우저 직접 호출 (일부 환경에서 CORS 오류 발생 가능)<br>
-        배포 방법: worker/README.md 참고
+        📤 <strong>세일즈맵 등록 시에만 사용</strong> (salesmap.kr CORS 우회)<br>
+        Vision OCR · bizno.net · 국세청은 Worker 없이 직접 연결됩니다
       </div>
       <div class="cfg-status" id="cfg-worker-status"></div>
     </div>
@@ -240,9 +253,10 @@ if(location.protocol==="file:"){
         <span class="cfg-badge cfg-badge-opt">선택</span>
       </div>
       <input id="cfg-bizno" class="cfg-input" type="password" placeholder="bizno.net 발급 API Key" autocomplete="off" spellcheck="false"/>
+      <div class="cfg-status" id="cfg-bizno-status"></div>
       <div class="cfg-hint">
         상호명 → 사업자번호 역조회에 사용<br>
-        <a href="https://bizno.net/api" target="_blank" style="color:var(--pri)">bizno.net/api</a> 에서 무료 발급 가능
+        <a href="https://bizno.net/api" target="_blank" style="color:var(--pri)">bizno.net/api</a> 에서 무료 발급 가능 (회원가입 후 즉시 사용)
       </div>
     </div>
 
@@ -253,6 +267,7 @@ if(location.protocol==="file:"){
         <span class="cfg-badge cfg-badge-opt">선택</span>
       </div>
       <input id="cfg-nts" class="cfg-input" type="password" placeholder="공공데이터포털 발급 서비스키" autocomplete="off" spellcheck="false"/>
+      <div class="cfg-status" id="cfg-nts-status"></div>
       <div class="cfg-hint">
         사업자번호 상태(계속/휴업/폐업) 조회에 사용<br>
         <a href="https://www.data.go.kr" target="_blank" style="color:var(--pri)">data.go.kr</a> → '국세청 사업자등록정보 진위확인 및 상태조회 서비스' 신청
@@ -538,13 +553,18 @@ if(location.protocol==="file:"){
 /* ═══════════════════════════════════════════════════
    🔑 API Key 관리 — localStorage 기반 (하드코딩 없음)
    ═══════════════════════════════════════════════════ */
-const getGcloudKey      = () => localStorage.getItem("ocr_gcloud_key")      || "";
+// Vision / Gemini 분리 (기존 ocr_gcloud_key는 양쪽 하위 호환 fallback)
+const getVisionKey      = () => localStorage.getItem("ocr_vision_key")  || localStorage.getItem("ocr_gcloud_key") || "";
+const getGeminiKey      = () => localStorage.getItem("ocr_gemini_key")  || localStorage.getItem("ocr_gcloud_key") || "";
+const getGcloudKey      = () => getGeminiKey(); // 하위 호환 별칭
 const getBiznoKey       = () => localStorage.getItem("ocr_bizno_key")       || "";
 const getNtsKey         = () => localStorage.getItem("ocr_nts_key")         || "";
 const getWorkerUrl      = () => localStorage.getItem("ocr_worker_url")      || "";
 const getSalesmapToken  = () => localStorage.getItem("ocr_salesmap_token")  || "";
-/* 전역 속성으로 등록 — 기존 코드 호환 */
-Object.defineProperty(window, "GCLOUD_API_KEY",   { get: getGcloudKey,  configurable: true });
+/* 전역 속성으로 등록 */
+Object.defineProperty(window, "VISION_API_KEY",   { get: getVisionKey,  configurable: true });
+Object.defineProperty(window, "GEMINI_API_KEY",   { get: getGeminiKey,  configurable: true });
+Object.defineProperty(window, "GCLOUD_API_KEY",   { get: getGeminiKey,  configurable: true }); // 하위 호환
 Object.defineProperty(window, "BIZNO_API_KEY",    { get: getBiznoKey,   configurable: true });
 Object.defineProperty(window, "NTS_SERVICE_KEY",  { get: getNtsKey,     configurable: true });
 Object.defineProperty(window, "WORKER_PROXY_URL", { get: getWorkerUrl,  configurable: true });
@@ -808,59 +828,71 @@ function xhrPost(url, jsonBody, timeoutMs = 30000) {
 async function testApiConnection() {
   const results = { network: false, visionApi: false, geminiApi: false, workerApi: false, details: [] };
 
-  // 0) API Key 미설정 체크
-  if (!getGcloudKey()) {
-    results.details.push("❌ Google API Key 미설정 — ⚙️ 설정에서 키를 입력하세요");
-    return results;
-  }
-
   // 1) Vision API 연결 확인
-  try {
-    const url = `https://vision.googleapis.com/v1/images:annotate?key=${GCLOUD_API_KEY}`;
-    const r = await xhrPost(url, { requests: [] }, 10000);
-    results.network = true;
-    if (r.status === 403 || r.status === 401) {
-      results.details.push("⚠️ Vision API: 키 인증 실패 (HTTP " + r.status + ")");
-    } else {
-      results.visionApi = true;
-      results.details.push("✅ Vision API 연결: 정상 (HTTP " + r.status + ")");
-    }
-  } catch (e) {
-    results.details.push("❌ Vision API 연결 실패: " + e.message);
-  }
-
-  // 3) Cloudflare Worker 연결 확인 (설정된 경우)
-  const workerUrl = getWorkerUrl();
-  if (workerUrl) {
+  if (getVisionKey()) {
     try {
-      const resp = await fetch(workerUrl + "/bizno?q=test", { signal: AbortSignal.timeout(6000) });
-      results.workerApi = resp.ok || resp.status === 400;
-      results.details.push(results.workerApi
-        ? "✅ Cloudflare Worker 연결: 정상"
-        : "⚠️ Cloudflare Worker 응답 이상 (HTTP " + resp.status + ")");
+      const url = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`;
+      const r = await xhrPost(url, { requests: [] }, 10000);
+      results.network = true;
+      if (r.status === 403 || r.status === 401) {
+        results.details.push("⚠️ Vision API: 키 인증 실패 (HTTP " + r.status + ") — Cloud Vision API 허용 여부 확인");
+      } else {
+        results.visionApi = true;
+        results.details.push("✅ Vision API: 정상 (HTTP " + r.status + ")");
+      }
     } catch (e) {
-      results.details.push("❌ Cloudflare Worker 연결 실패: " + e.message);
+      results.details.push("❌ Vision API: 연결 실패 — " + e.message);
     }
   } else {
-    results.details.push("ℹ️ Cloudflare Worker: 미설정 (직접 호출 모드)");
+    results.details.push("❌ Vision API: Key 미설정 — OCR 기능 사용 불가");
+  }
+
+  // 3) bizno.net API 연결 확인 (key 유무 관계없이 항상 표시)
+  const biznoKey = getBiznoKey();
+  if (biznoKey) {
+    try {
+      const bizUrl = `${BIZNO_API_URL}?key=${biznoKey}&gb=3&q=${encodeURIComponent("삼성")}&type=json&status=Y`;
+      const bizResp = await fetch(bizUrl, { signal: AbortSignal.timeout(8000) });
+      if (bizResp.ok) {
+        const bData = await bizResp.json().catch(() => null);
+        const rc = bData && (bData.resultCode === 0 || bData.resultCode === "0");
+        if (rc) {
+          results.details.push(`✅ bizno.net API: 정상 연결 (${bData.totalCount || 0}건 조회)`);
+        } else if (bData && bData.resultCode === -1) {
+          results.details.push(`❌ bizno.net API: Key 인증 실패 — ${bData.resultMsg || '미등록 사용자'}\n   bizno.net/api 에서 새 Key를 발급받아 ⚙️ 설정에 입력하세요`);
+        } else {
+          results.details.push(`⚠️ bizno.net API: 오류 ${bData?.resultCode} — ${bData?.resultMsg || "Key를 확인하세요"}`);
+        }
+      } else {
+        results.details.push(`⚠️ bizno.net API: HTTP ${bizResp.status}`);
+      }
+    } catch (e) {
+      results.details.push("❌ bizno.net API: 연결 실패 — " + e.message);
+    }
+  } else {
+    results.details.push("❌ bizno.net API: Key 미설정\n   bizno.net/api 에서 무료 발급 → ⚙️ 설정에 입력하세요");
   }
 
   // 2) Gemini API 연결 확인
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GCLOUD_API_KEY}`;
-    const r = await xhrPost(url, { contents: [{ parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 10 } }, 15000);
-    results.network = true;
-    if (r.status === 403 || r.status === 401) {
-      results.details.push("⚠️ Gemini API: 키 인증 실패 (HTTP " + r.status + ")");
-    } else if (r.status === 429) {
-      results.geminiApi = true;
-      results.details.push("⚠️ Gemini API: 정상이나 할당량 초과 (잠시 후 재시도)");
-    } else {
-      results.geminiApi = true;
-      results.details.push("✅ Gemini API 연결: 정상 (HTTP " + r.status + ")");
+  if (getGeminiKey()) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const r = await xhrPost(url, { contents: [{ parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 10 } }, 15000);
+      results.network = true;
+      if (r.status === 403 || r.status === 401) {
+        results.details.push("⚠️ Gemini API: 키 인증 실패 (HTTP " + r.status + ") — Generative Language API 허용 여부 확인");
+      } else if (r.status === 429) {
+        results.geminiApi = true;
+        results.details.push("⚠️ Gemini API: 정상이나 할당량 초과 (잠시 후 재시도)");
+      } else {
+        results.geminiApi = true;
+        results.details.push("✅ Gemini API: 정상 (HTTP " + r.status + ")");
+      }
+    } catch (e) {
+      results.details.push("❌ Gemini API: 연결 실패 — " + e.message);
     }
-  } catch (e) {
-    results.details.push("❌ Gemini API 연결 실패: " + e.message);
+  } else {
+    results.details.push("❌ Gemini API: Key 미설정 — AI 기업정보 검색 불가");
   }
 
   if (!results.network) {
@@ -1163,7 +1195,7 @@ async function ocrHeicWithGemini(base64Data, mimeType){
    직접 호출 모드: file:// → bizno.net 직접 XHR
    ═══════════════════════════════════════════════════ */
 const BIZNO_API_URL = "https://bizno.net/api/fapi";
-const USE_WORKER = () => getWorkerUrl() && location.protocol === "https:";
+// Worker는 세일즈맵 등록(salesmapFetch)에서만 사용 — bizno/NTS는 CORS 허용으로 직접 호출
 
 async function callBiznoAPI(companyName) {
   if (!companyName) return null;
@@ -1171,27 +1203,12 @@ async function callBiznoAPI(companyName) {
   if (cleanName.length < 2) return null;
 
   try {
-    // ── Worker 프록시 모드 (GitHub Pages) ──
-    if (USE_WORKER()) {
-      const resp = await fetch(`${WORKER_PROXY_URL}/bizno?q=${encodeURIComponent(cleanName)}`, { timeout: 10000 });
-      if (!resp.ok) throw new Error(`Worker HTTP ${resp.status}`);
-      const result = await resp.json();
-      console.log(`[Bizno→Worker] "${cleanName}" →`, result._matched ? `✅ ${result.사업자번호}` : "❌ 미매칭");
-      return result._matched ? result : null;
-    }
-
-    // ── 직접 호출 모드 (file://) ──
-    const url = `${BIZNO_API_URL}?key=${BIZNO_API_KEY}&gb=3&q=${encodeURIComponent(cleanName)}&type=json&status=Y`;
-    const text = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", url, true);
-      xhr.timeout = 10000;
-      xhr.onload = () => { if(xhr.status>=200&&xhr.status<300) resolve(xhr.responseText); else { console.warn(`[Bizno] HTTP ${xhr.status} for "${cleanName}"`); reject(new Error("HTTP "+xhr.status)); } };
-      xhr.onerror = () => reject(new Error("네트워크 오류"));
-      xhr.ontimeout = () => reject(new Error("타임아웃"));
-      xhr.send();
-    });
-    console.log(`[Bizno] Raw response for "${cleanName}":`, text.substring(0, 500));
+    // bizno.net은 CORS 허용(access-control-allow-origin: *)이므로 직접 호출 가능
+    const bizUrl = `${BIZNO_API_URL}?key=${BIZNO_API_KEY}&gb=3&q=${encodeURIComponent(cleanName)}&type=json&status=Y`;
+    const resp = await fetch(bizUrl, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    console.log(`[Bizno] "${cleanName}" 응답:`, text.substring(0, 500));
 
     let data;
     try { data = JSON.parse(text); } catch (pe) {
@@ -1249,32 +1266,20 @@ async function verifyNTSBatch(bizNumbers) {
   try {
     let ntsData;
 
-    if (USE_WORKER()) {
-      // Worker 프록시 경유
-      const resp = await fetch(`${WORKER_PROXY_URL}/nts/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ b_no: cleanNumbers, serviceKey: NTS_SERVICE_KEY })
-      });
-      if (!resp.ok) throw new Error(`NTS Worker HTTP ${resp.status}`);
-      ntsData = await resp.json();
-    } else if (NTS_SERVICE_KEY) {
-      // 직접 호출 (file:// — CORS 없음)
-      const text = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", `https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey=${encodeURIComponent(NTS_SERVICE_KEY)}`, true);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        xhr.timeout = 15000;
-        xhr.onload = () => { if(xhr.status>=200&&xhr.status<300) resolve(xhr.responseText); else reject(new Error("HTTP "+xhr.status)); };
-        xhr.onerror = () => reject(new Error("네트워크 오류"));
-        xhr.ontimeout = () => reject(new Error("타임아웃"));
-        xhr.send(JSON.stringify({ b_no: cleanNumbers }));
-      });
-      ntsData = JSON.parse(text);
-    } else {
+    // 국세청 API는 CORS 허용(Access-Control-Allow-Origin: *) → Worker 없이 직접 호출
+    if (!NTS_SERVICE_KEY) {
       console.log("[NTS] 서비스키 미설정 — 국세청 검증 건너뜀");
       return {};
     }
+    const ntsUrl = `https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey=${encodeURIComponent(NTS_SERVICE_KEY)}`;
+    const ntsResp = await fetch(ntsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ b_no: cleanNumbers }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!ntsResp.ok) throw new Error(`NTS HTTP ${ntsResp.status}`);
+    ntsData = await ntsResp.json();
 
     // 결과를 사업자번호(10자리) → 상태 맵으로 변환
     const resultMap = {};
@@ -2175,7 +2180,7 @@ function pushRecord(rec) {
   }
   // 업종 자동 태깅 (빈 경우)
   if (!rec.업종) rec.업종 = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
-  pushRecord(rec);
+  records.push(rec);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -2229,7 +2234,7 @@ function dataUrlToBase64(dataUrl){
 
 /* Google Vision API 호출: DOCUMENT_TEXT_DETECTION (재시도 포함) */
 async function callGoogleVision(base64, _retry = 0){
-  const url=`https://vision.googleapis.com/v1/images:annotate?key=${GCLOUD_API_KEY}`;
+  const url=`https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`;
   const body={
     requests:[{
       image:{content:base64},
@@ -4118,7 +4123,7 @@ function exportExcel(){
 /* ═══════════════════════════════════════════════════
    🗺 세일즈맵 API 직접 등록
    ═══════════════════════════════════════════════════ */
-const SALESMAP_BASE = "https://api.salesmap.kr";
+const SALESMAP_BASE = "https://salesmap.kr/api";
 
 async function salesmapFetch(path, method, body, token) {
   const workerUrl = getWorkerUrl();
@@ -4128,18 +4133,23 @@ async function salesmapFetch(path, method, body, token) {
     "Authorization": `Bearer ${token}`
   };
 
+  // GitHub Pages(HTTPS)에서 Worker 미설정 → CORS 차단 예방
+  if (location.protocol === "https:" && !workerUrl) {
+    throw new Error("GitHub Pages에서 세일즈맵 등록은 Cloudflare Worker URL이 필요합니다.\n⚙️ 설정에서 Worker URL을 입력하세요.");
+  }
+
   // Cloudflare Worker 프록시 경유 (CORS 우회)
   if (workerUrl) {
     const res = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: targetUrl, method, headers, body })
+      body: JSON.stringify({ url: targetUrl, method, headers, body: body || null })
     });
     if (!res.ok) throw new Error(`Worker ${res.status}: ${await res.text()}`);
     return res.json();
   }
 
-  // 직접 호출 (Worker 미설정 시)
+  // 직접 호출 (로컬 file:// 환경)
   const res = await fetch(targetUrl, {
     method,
     headers,
@@ -4339,15 +4349,20 @@ $("#apiTestBtn").onclick=async()=>{
   btn.disabled=true;
   try{
     const r=await testApiConnection();
-    const msg=r.details.join("\n");
-    if(r.network && r.visionApi && r.geminiApi){
-      toast("✅ 모든 API 연결 정상!\n"+msg,"success");
-    }else if(!r.network){
-      toast("❌ 인터넷 연결 불가\n"+msg,"error");
-    }else{
-      toast("⚠️ 일부 API 연결 문제\n"+msg,"error");
+    // 결과를 읽기 쉬운 팝업 패널로 표시
+    let existing=document.getElementById("apiTestResult");
+    if(!existing){
+      existing=document.createElement("div");
+      existing.id="apiTestResult";
+      existing.style.cssText="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1.5px solid var(--bdr2);border-radius:14px;padding:20px 24px;z-index:1000;min-width:320px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.18);font-size:13px;line-height:2";
+      document.body.appendChild(existing);
     }
-    console.log("[API 연결 테스트 결과]",msg);
+    const allOk=r.network&&r.visionApi&&r.geminiApi;
+    const title=allOk?"✅ API 연결 정상":(!r.network?"❌ 인터넷 연결 불가":"⚠️ 일부 연결 문제");
+    existing.innerHTML=`<div style="font-weight:700;font-size:14px;margin-bottom:10px">${title}</div>`
+      +r.details.map(d=>`<div style="white-space:pre-wrap">${d}</div>`).join("")
+      +`<button onclick="this.parentElement.remove()" style="margin-top:14px;width:100%;padding:7px;border:none;border-radius:8px;background:var(--pri);color:#fff;font-weight:700;cursor:pointer;font-size:13px">닫기</button>`;
+    console.log("[API 연결 테스트 결과]",r.details.join("\n"));
   }catch(e){
     toast("테스트 오류: "+e.message,"error");
   }finally{
@@ -4455,30 +4470,66 @@ function detectInputFormat(url) {
   return 'html';
 }
 
+/* ── 구조화 PDF 직접 파서 (부스번호+업체명 패턴 — COEX·KINTEX 등) ── */
+function parseStructuredExhibitorList(text) {
+  // 부스번호 패턴: 영문자 1~3개 + 숫자 3~4자리 (A432, LB112, D338 등)
+  // COEX AW 2026처럼 "부스번호 업체명 부스번호 업체명 ..." 3컬럼 레이아웃을 지원
+  const companies = [];
+  const seen = new Set();
+  const HEADER_RE = /^(부스번호|업체명|Exhibitor|Booth|NO\.?|Hall|List)$/i;
+
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // lookbehind (?<=\s|^)으로 공백 뒤에서만 분할 → 'LB112' 같은 다중자 부스번호 보존
+    const parts = trimmed.split(/(?<=\s)(?=[A-Z]{1,3}\d{3,4}\s)/);
+    // 첫 파트도 부스번호 패턴으로 시작하면 포함
+    for (const part of parts) {
+      const m = part.trim().match(/^([A-Z]{1,3}\d{3,4})\s+(.+)/);
+      if (!m) continue;
+      const booth = m[1];
+      const name  = m[2].trim();
+      if (!name || HEADER_RE.test(name)) continue;
+      if (name.length < 2 || /^\d+$/.test(name)) continue;
+      const key = booth + '|' + name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      companies.push({
+        회사명: name, 부스번호: booth,
+        전시품: '', 웹주소: '', 담당자: '', 전화: '', 이메일: '', 주소: '', 대표자: '',
+      });
+    }
+  }
+  return companies;
+}
+
 /* ── PDF 업체 목록 파싱 (COEX 등 PDF 리스트) ── */
 async function fetchExhibitorsPDF(source) {
   let arrayBuffer;
   if (typeof source === 'string') {
     updateExpoProgress('📥 PDF 다운로드 중...', 0, 0);
-    const PROXIES = [
-      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    ];
+    // Worker 프록시를 최우선 시도 (가장 안정적)
     let blob = null;
-    for (const proxy of PROXIES) {
+    if (getWorkerUrl()) {
       try {
-        const res = await fetch(proxy(source), { signal: AbortSignal.timeout(25000) });
-        if (res.ok) { blob = await res.blob(); break; }
-      } catch(e) { continue; }
-    }
-    // Worker 프록시 시도
-    if (!blob && getWorkerUrl()) {
-      try {
-        const res = await fetch(getWorkerUrl() + '/proxy?url=' + encodeURIComponent(source), { signal: AbortSignal.timeout(25000) });
+        const res = await fetch(getWorkerUrl() + '?url=' + encodeURIComponent(source), { signal: AbortSignal.timeout(30000) });
         if (res.ok) blob = await res.blob();
       } catch(e) {}
     }
-    if (!blob) throw new Error('PDF를 가져올 수 없습니다. Worker URL 설정을 확인하세요.');
+    // 공개 CORS 프록시 fallback
+    if (!blob) {
+      const PROXIES = [
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      ];
+      for (const proxy of PROXIES) {
+        try {
+          const res = await fetch(proxy(source), { signal: AbortSignal.timeout(25000) });
+          if (res.ok) { blob = await res.blob(); break; }
+        } catch(e) { continue; }
+      }
+    }
+    if (!blob) throw new Error('PDF를 가져올 수 없습니다. ⚙️ 설정에서 Cloudflare Worker URL을 확인하세요.');
     arrayBuffer = await blob.arrayBuffer();
   } else {
     arrayBuffer = await source.arrayBuffer();
@@ -4491,7 +4542,7 @@ async function fetchExhibitorsPDF(source) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    // 위치 기반 줄바꿈 복원 (같은 y좌표 그룹)
+    // 위치 기반 줄바꿈 복원 (같은 y좌표 그룹핑)
     let lastY = null;
     const lineTexts = [];
     for (const item of content.items) {
@@ -4505,6 +4556,17 @@ async function fetchExhibitorsPDF(source) {
 
   if (!allText.trim()) throw new Error('PDF에서 텍스트를 추출할 수 없습니다 (스캔 이미지 PDF일 수 있음).');
 
+  // ── 구조화 목록 감지 시도 (부스번호+업체명 패턴) — Gemini API 호출 없이 직접 추출 ──
+  updateExpoProgress('🔍 PDF 구조 분석 중...', 0, 0);
+  const structured = parseStructuredExhibitorList(allText);
+  if (structured.length >= 10) {
+    console.log(`[PDF 직접 파싱] 구조화 목록 감지 — ${structured.length}개 업체 추출 (AI 불필요)`);
+    updateExpoProgress(`✅ 구조화 목록 감지! ${structured.length}개 업체 직접 추출 완료`, structured.length, structured.length);
+    return structured;
+  }
+
+  // ── 구조화 패턴 미감지 → Gemini AI fallback ──
+  console.log(`[PDF] 구조화 패턴 미감지 (${structured.length}개), Gemini AI로 파싱합니다`);
   return await extractCompaniesViaGemini(allText, 'pdf');
 }
 
@@ -4971,7 +5033,7 @@ async function fetchAllExhibitors() {
     // ════════════════════════════════════
     if (fmt === 'pdf') {
       updateFormatBadge('pdf');
-      toast('📄 PDF 포맷 감지 — Gemini AI로 파싱합니다', 'info');
+      toast('📄 PDF 포맷 감지 — 구조화 목록 직접 추출 시도, 미감지 시 AI 분석', 'info');
       const companies = await fetchExhibitorsPDF(url);
       if (!companies || companies.length === 0) throw new Error('PDF에서 업체 정보를 추출하지 못했습니다.');
       toast(`📋 ${companies.length}개 업체 추출 완료. 등록 중...`, 'success');
@@ -5095,7 +5157,7 @@ async function fetchAllExhibitorsFromFile() {
       companies = await fetchExhibitorsFromImage(file);
     } else if (ext === 'pdf') {
       updateFormatBadge('pdf');
-      toast('📄 PDF 포맷 — 텍스트 추출 후 AI 파싱합니다', 'info');
+      toast('📄 PDF 파싱 시작 — 구조화 목록 감지 후 직접 추출, 미감지 시 AI 분석', 'info');
       companies = await fetchExhibitorsPDF(file);
     } else if (['xlsx','xls','csv'].includes(ext)) {
       updateFormatBadge('excel');
@@ -5212,18 +5274,24 @@ function setExpoFile(file) {
 function openSettings() {
   const modal = $("#settingsModal");
   modal.classList.remove("hidden");
-  // 현재 저장된 값 로드
-  const gk = getGcloudKey(), bk = getBiznoKey(), nk = getNtsKey(), wu = getWorkerUrl(), sk = getSalesmapToken();
-  $("#cfg-gcloud").value    = gk;
-  $("#cfg-bizno").value     = bk;
-  $("#cfg-nts").value       = nk;
-  $("#cfg-worker").value    = wu;
-  $("#cfg-salesmap").value  = sk;
+  const vk = getVisionKey(), gk = getGeminiKey(), bk = getBiznoKey(), nk = getNtsKey(), wu = getWorkerUrl(), sk = getSalesmapToken();
+  $("#cfg-vision").value   = vk;
+  $("#cfg-gemini").value   = gk;
+  $("#cfg-bizno").value    = bk;
+  $("#cfg-nts").value      = nk;
+  $("#cfg-worker").value   = wu;
+  $("#cfg-salesmap").value = sk;
   // 상태 표시
-  $("#cfg-gcloud-status").className = "cfg-status " + (gk ? "ok" : "err");
-  $("#cfg-gcloud-status").textContent = gk ? "✅ 설정됨" : "❌ 미설정 — Vision OCR 및 Gemini AI 사용 불가";
+  $("#cfg-vision-status").className = "cfg-status " + (vk ? "ok" : "err");
+  $("#cfg-vision-status").textContent = vk ? "✅ 설정됨 — OCR 사용 가능" : "❌ 미설정 — 명함·이미지 OCR 불가";
+  $("#cfg-gemini-status").className = "cfg-status " + (gk ? "ok" : "err");
+  $("#cfg-gemini-status").textContent = gk ? "✅ 설정됨 — AI 기업정보 검색 가능" : "❌ 미설정 — AI 검색 불가";
+  $("#cfg-bizno-status").className = "cfg-status " + (bk ? "ok" : "warn");
+  $("#cfg-bizno-status").textContent = bk ? "✅ 설정됨 — 사업자번호 자동 조회 활성" : "⚠️ 미설정 — bizno.net/api 에서 무료 발급 가능";
   $("#cfg-worker-status").className = "cfg-status " + (wu ? "ok" : "warn");
-  $("#cfg-worker-status").textContent = wu ? "✅ " + wu : "⚠️ 미설정 — 직접 호출 모드 (CORS 제한 주의)";
+  $("#cfg-worker-status").textContent = wu ? "✅ 설정됨 — 세일즈맵 등록 가능" : "⚠️ 미설정 — 세일즈맵 등록 불가 (OCR·bizno·NTS는 정상 작동)";
+  $("#cfg-nts-status").className = "cfg-status " + (nk ? "ok" : "warn");
+  $("#cfg-nts-status").textContent = nk ? "✅ 설정됨 — 사업자 상태 조회 활성 (계속·휴업·폐업)" : "⚠️ 미설정 — data.go.kr 에서 무료 신청 가능";
   $("#cfg-salesmap-status").className = "cfg-status " + (sk ? "ok" : "warn");
   $("#cfg-salesmap-status").textContent = sk ? "✅ 설정됨 — 세일즈맵 직접 등록 가능" : "⚠️ 미설정 — 세일즈맵 등록 버튼 사용 불가";
 }
@@ -5233,14 +5301,18 @@ function closeSettings() {
 }
 
 function saveSettings() {
-  const gk = $("#cfg-gcloud").value.trim();
+  const vk = $("#cfg-vision").value.trim();
+  const gk = $("#cfg-gemini").value.trim();
   const bk = $("#cfg-bizno").value.trim();
   const nk = $("#cfg-nts").value.trim();
   const wu = $("#cfg-worker").value.trim().replace(/\/$/, ""); // 후행 슬래시 제거
   const sk = $("#cfg-salesmap").value.trim();
 
-  if (gk) localStorage.setItem("ocr_gcloud_key", gk);
-  else    localStorage.removeItem("ocr_gcloud_key");
+  if (vk) localStorage.setItem("ocr_vision_key", vk);
+  else    localStorage.removeItem("ocr_vision_key");
+
+  if (gk) localStorage.setItem("ocr_gemini_key", gk);
+  else    localStorage.removeItem("ocr_gemini_key");
 
   if (bk) localStorage.setItem("ocr_bizno_key", bk);
   else    localStorage.removeItem("ocr_bizno_key");
@@ -5256,12 +5328,13 @@ function saveSettings() {
 
   closeSettings();
   checkApiKeyBanner();
-  toast(gk ? "✅ API 키 저장 완료!" : "⚠️ Google API Key 없이 저장됨 — OCR 기능 제한", gk ? "success" : "");
+  const hasKeys = vk || gk;
+  toast(hasKeys ? "✅ API 키 저장 완료!" : "⚠️ Google API Key 없이 저장됨 — OCR 기능 제한", hasKeys ? "success" : "");
 }
 
 function checkApiKeyBanner() {
   const banner = $("#apiWarnBanner");
-  if (!getGcloudKey()) {
+  if (!getVisionKey() && !getGeminiKey()) {
     banner.classList.remove("hidden");
   } else {
     banner.classList.add("hidden");
@@ -5280,7 +5353,7 @@ $("#settingsBtn").onclick = openSettings;
 checkApiKeyBanner();
 
 // API Key 미설정 시 설정창 자동 안내
-if (!getGcloudKey()) {
+if (!getVisionKey() && !getGeminiKey()) {
   // 첫 실행 여부 체크
   const firstRun = !localStorage.getItem("ocr_setup_done");
   if (firstRun) {
