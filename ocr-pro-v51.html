@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v8.0 — Google Vision OCR + Gemini AI 구조화 파싱 + HEIC 지원</title>
+<title>OCR Pro v9.0 — 다중 포맷 참가업체 수집 (HTML·PDF·이미지·Excel·API)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -170,7 +170,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v8.0</span>
+  <span class="ver">v9.0</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
 </div>
@@ -278,6 +278,7 @@ if(location.protocol==="file:"){
   <button class="itab" data-tab="qr">📱 QR코드</button>
   <button class="itab" data-tab="doc">📄 문서</button>
   <button class="itab" data-tab="url">🔗 URL</button>
+  <button class="itab" data-tab="expo" style="color:var(--vio)">🏛 전시회</button>
 </div>
 
 <!-- 명함 탭 -->
@@ -345,9 +346,109 @@ if(location.protocol==="file:"){
   </div>
 </div>
 
+<!-- 🏛 전시회 탭 -->
+<div id="panel-expo" class="ipanel hidden">
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <span style="font-size:22px">🏛</span>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:700">전시회 참가업체 자동 수집</div>
+      <div style="font-size:12px;color:var(--sub)">URL · PDF · 이미지 · 파일 — 어떤 형태든 자동 감지 → 세일즈맵 등록</div>
+    </div>
+    <!-- 포맷 배지 -->
+    <span id="expoFmtBadge" style="display:none;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap"></span>
+  </div>
+
+  <!-- 입력 모드 탭 -->
+  <div style="display:flex;gap:4px;margin-bottom:10px">
+    <button class="expo-mode-btn active" data-mode="url" style="flex:1;padding:7px 10px;border:1.5px solid var(--pri);background:var(--pri-l);color:var(--pri);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🔗 URL</button>
+    <button class="expo-mode-btn" data-mode="file" style="flex:1;padding:7px 10px;border:1.5px solid var(--bdr);background:var(--card2);color:var(--sub);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">📂 파일 업로드</button>
+  </div>
+
+  <!-- URL 입력 영역 -->
+  <div id="expoModeUrl">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="expoUrl" class="exh-input" type="url"
+        placeholder="URL 입력 — .pdf / 이미지 URL / 전시회 홈페이지 모두 가능"
+        style="flex:1;font-size:12px"/>
+      <button id="expoDetectBtn" class="btn btn-out" style="white-space:nowrap;font-size:12px">🔍 분석</button>
+    </div>
+    <!-- 포맷 힌트 -->
+    <div id="expoFmtHint" style="font-size:11px;color:var(--sub);margin-bottom:8px;padding:6px 10px;background:var(--card2);border-radius:6px;display:none"></div>
+  </div>
+
+  <!-- 파일 업로드 영역 -->
+  <div id="expoModeFile" style="display:none;margin-bottom:8px">
+    <div id="expoFileDrop" style="border:2px dashed var(--bdr2);border-radius:10px;padding:20px;text-align:center;cursor:pointer;background:var(--card2);transition:all .2s">
+      <div style="font-size:24px;margin-bottom:6px">📂</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">파일을 끌어다 놓거나 클릭하여 선택</div>
+      <div style="font-size:11px;color:var(--sub)">PDF · 이미지(JPG·PNG) · Excel(XLSX) · CSV — 모두 지원</div>
+      <input id="expoFileInput" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.xlsx,.xls,.csv" style="display:none"/>
+    </div>
+    <div id="expoFileInfo" style="display:none;margin-top:8px;padding:8px 12px;background:var(--grn-l);border:1px solid #a7f3d0;border-radius:8px;font-size:12px;font-weight:600;color:var(--grn)"></div>
+  </div>
+
+  <!-- 옵션 -->
+  <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:12px">
+    <label style="font-weight:600;color:var(--txt);display:flex;align-items:center;gap:5px">
+      최대 페이지
+      <input id="expoMaxPages" type="number" value="999" min="1" max="999"
+        style="width:64px;border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:12px;outline:none"/>
+      <span style="color:var(--sub);font-weight:400">(999 = 전체)</span>
+    </label>
+    <label style="font-weight:600;color:var(--txt);display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input id="expoDetail" type="checkbox" checked style="accent-color:var(--vio)"/>
+      상세정보 포함 <span style="color:var(--sub);font-weight:400">(HTML 전용 — 느림)</span>
+    </label>
+    <label style="font-weight:600;color:var(--txt);display:flex;align-items:center;gap:5px">
+      요청 간격
+      <input id="expoDelay" type="number" value="400" min="100" max="5000" step="100"
+        style="width:72px;border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:12px;outline:none"/>
+      <span style="color:var(--sub);font-weight:400">ms</span>
+    </label>
+  </div>
+
+  <!-- 시작/중지 -->
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <button id="expoStartBtn" class="btn btn-vio">🏛 참가업체 가져오기</button>
+    <button id="expoStopBtn" class="btn btn-red" disabled>⏹ 중지</button>
+  </div>
+
+  <!-- 진행상황 -->
+  <div id="expoProgress" class="ocr-progress hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+      <span id="expoStatusMsg" style="font-weight:600;font-size:12px">준비 중...</span>
+      <span id="expoCnt" style="font-size:12px;color:var(--vio);font-weight:700"></span>
+    </div>
+    <div class="pbar"><div class="pfill" id="expoBar2" style="width:0%;background:linear-gradient(90deg,var(--vio),var(--pri))"></div></div>
+  </div>
+
+  <!-- 구조 분석 결과 -->
+  <div id="expoDetectResult" style="display:none;margin-top:10px;padding:10px 14px;background:var(--grn-l);border:1px solid #a7f3d0;border-radius:8px;font-size:12px;line-height:1.8"></div>
+
+  <!-- 프리셋 -->
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bdr)">
+    <div style="font-size:11px;font-weight:700;color:var(--sub);margin-bottom:6px">⚡ 주요 전시회 빠른 선택</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      <button class="expo-preset btn-xs" data-url="https://simtos.org/kor/exhibitors/exhibitor_list.do">🏭 SIMTOS 2026</button>
+      <button class="expo-preset btn-xs" data-url="https://kimes.kr/ko/visitor/exhibitor-search">🏥 KIMES</button>
+      <button class="expo-preset btn-xs" data-url="https://cdn.ems.coex.co.kr/event/1009/@20261009/cms/AW%202026%20%EC%B0%B8%EA%B0%80%EC%97%85%EC%B2%B4%20%EB%A6%AC%EC%8A%A4%ED%8A%B8[%EA%B5%AD%EB%AC%B8].pdf">📄 COEX AW 2026 (PDF)</button>
+      <button class="expo-preset btn-xs" data-url="https://www.kintex.com" style="color:var(--mut)" title="URL 직접 확인 필요">🏢 KINTEX</button>
+      <button class="expo-preset btn-xs" data-url="">✏️ 직접 입력</button>
+    </div>
+    <div style="font-size:11px;color:var(--mut);margin-top:8px;line-height:1.7">
+      💡 <strong>URL 포맷 자동 감지:</strong> .pdf → PDF파싱 | 이미지 → Vision AI | 동적페이지 → API탐색 → AI분석<br>
+      💡 <strong>CORS 오류 시:</strong> ⚙️ 설정에서 Cloudflare Worker URL 입력<br>
+      💡 <strong>이미지/PDF 업체표:</strong> 📂 파일 업로드 탭에서 직접 올리면 Gemini Vision이 추출
+    </div>
+  </div>
+
+</div>
+
 <!-- 액션 바 -->
 <div class="action-bar">
   <button id="searchBtn" class="btn btn-pri" disabled>🤖 선택 후 AI 검색</button>
+  <button id="biznoVerifyBtn" class="btn btn-out" disabled title="Google Search Grounding으로 사업자번호 교차검증" style="font-size:12px">🔄 사업자번호 재확인</button>
   <button id="exportBtn" class="btn btn-grn" disabled>⬇ 세일즈맵 엑셀 <span class="cnt-badge" id="exportCnt">(0건)</span></button>
   <button id="resetBtn" class="btn btn-red" disabled>초기화</button>
   <div style="margin-left:auto;font-size:13px;color:var(--sub);font-weight:600" id="counter">0/0</div>
@@ -463,6 +564,85 @@ function googleSearchAll(){
   if(tgts.length>10){if(!confirm(`${tgts.length}개 탭이 열립니다. 계속하시겠습니까?`))return}
   for(const r of tgts)googleSearch(r);
   toast(`🔍 ${tgts.length}건 구글 검색 탭 열림`,"success");
+}
+
+/* ══════════════════════════════════════════════════════
+   사업자번호 교차검증 (Gemini Google Search Grounding)
+   ══════════════════════════════════════════════════════ */
+
+/* 단일 레코드 사업자번호 재확인 */
+async function verifySingleBizno(rec) {
+  if (!GCLOUD_API_KEY) { toast('⚙️ Gemini API Key를 먼저 설정하세요', 'error'); return; }
+  if (!rec.회사명) { toast('회사명이 없어 검증할 수 없습니다', 'error'); return; }
+
+  // 버튼 로딩 표시
+  const btn = document.querySelector(`.bizno-verify-btn[data-id="${rec.id}"]`);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const result = await verifyBiznoViaGrounding(rec.회사명, rec.사업자번호);
+    if (!result || !result.bizno) {
+      rec._biznoVerified = 'notfound';
+      toast(`❓ ${rec.회사명}: 구글에서 사업자번호를 찾을 수 없습니다`, 'info');
+    } else if (result.match === true) {
+      rec._biznoVerified = 'match';
+      toast(`✅ ${rec.회사명}: 사업자번호 일치 확인 (${rec.사업자번호})`, 'success');
+    } else if (result.match === false) {
+      rec._biznoVerified = 'mismatch';
+      rec._biznoAlt = result.bizno;
+      toast(`⚠️ ${rec.회사명}: 불일치! 현재=${rec.사업자번호} / 구글=${result.bizno}`, 'error');
+    } else {
+      // match === null (현재 사업자번호 없음 → 구글 결과로 채움)
+      rec.사업자번호 = result.bizno;
+      rec._biznoVerified = 'match';
+      if (result.대표자 && !rec.대표자) rec.대표자 = result.대표자;
+      toast(`✅ ${rec.회사명}: 사업자번호 발견 → ${result.bizno}`, 'success');
+    }
+  } catch(e) {
+    toast(`❌ 검증 실패: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+    render();
+  }
+}
+
+/* 선택 항목 일괄 교차검증 */
+let biznoVerifyAborted = false;
+
+async function verifyAllBizno() {
+  if (!GCLOUD_API_KEY) { toast('⚙️ Gemini API Key를 먼저 설정하세요', 'error'); return; }
+  const tgts = records.filter(r => r.checked && r.회사명);
+  if (!tgts.length) { toast('검증할 항목을 선택하세요', 'error'); return; }
+
+  biznoVerifyAborted = false;
+  toast(`🔄 ${tgts.length}개 업체 사업자번호 교차검증 시작...`, 'info');
+
+  let matched = 0, mismatched = 0, notfound = 0;
+  for (let i = 0; i < tgts.length; i++) {
+    if (biznoVerifyAborted) break;
+    const rec = tgts[i];
+    try {
+      const result = await verifyBiznoViaGrounding(rec.회사명, rec.사업자번호);
+      if (!result || !result.bizno) {
+        rec._biznoVerified = 'notfound'; notfound++;
+      } else if (result.match === true) {
+        rec._biznoVerified = 'match'; matched++;
+      } else if (result.match === false) {
+        rec._biznoVerified = 'mismatch'; rec._biznoAlt = result.bizno; mismatched++;
+      } else {
+        rec.사업자번호 = result.bizno;
+        if (result.대표자 && !rec.대표자) rec.대표자 = result.대표자;
+        rec._biznoVerified = 'match'; matched++;
+      }
+      if (i % 3 === 0) render();
+    } catch(e) {
+      console.warn(`[검증실패] ${rec.회사명}:`, e.message);
+    }
+    await sleep(600); // rate limit 배려
+  }
+
+  render();
+  toast(`검증 완료 — ✅ 일치 ${matched} / ⚠️ 불일치 ${mismatched} / ❓ 미발견 ${notfound}`, mismatched > 0 ? 'error' : 'success');
 }
 
 /* ═══════════════════════════════════════════════════
@@ -819,6 +999,94 @@ async function callGeminiMultimodal(prompt, base64Data, mimeType, _retry = 0) {
   }
   if (!text.trim()) throw new Error("Gemini Vision 응답이 비어있습니다");
   return text;
+}
+
+/* ══════════════════════════════════════════════════════
+   Gemini Google Search Grounding (Step 3 폴백 — 웹검색)
+   ══════════════════════════════════════════════════════ */
+
+/* Grounding 전용 프롬프트 생성 */
+function makeGroundedPrompt(company) {
+  return `한국 기업 "${company.name}"${company.rep ? ` (대표자 참고: ${company.rep})` : ''}의 최신 정보를 구글 검색으로 찾아 아래 JSON 형식으로 응답하세요.
+
+JSON 객체 하나만 응답하세요 (설명 없이 raw JSON만):
+{"기업명":"정확한 회사명","사업자번호":"000-00-00000","대표자":"이름","주소":"시/도 시/군/구 상세주소","업종":"주요 업종","기업형태":"중소기업/중견기업/대기업","웹주소":"https://...","매출":"0억","영업이익":"0억"}
+
+모르는 정보는 빈 문자열("")로 남기세요. 사업자번호는 반드시 xxx-xx-xxxxx 형식으로.`;
+}
+
+/* Google Search Grounding Gemini API 호출 */
+async function callGeminiGrounded(prompt, _retry = 0) {
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GCLOUD_API_KEY}`;
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  await rateLimitWait();
+  let res;
+  try {
+    res = await xhrPost(GEMINI_URL, body, 30000);
+  } catch(e) {
+    if (_retry < 2) { await sleep(2000); return callGeminiGrounded(prompt, _retry + 1); }
+    throw new Error("Grounding 네트워크 오류: " + e.message);
+  }
+
+  if (res.status === 429 || res.status === 503) {
+    if (_retry >= 4) throw new Error("Grounding API 할당량 초과");
+    adaptInterval(false);
+    const waitSec = Math.min(8 * Math.pow(2, _retry), 60);
+    await sleep(waitSec * 1000);
+    return callGeminiGrounded(prompt, _retry + 1);
+  }
+
+  if (!res.ok) {
+    const errData = res._raw || {};
+    throw new Error(`Grounding API 오류: ${errData?.error?.message || res.status}`);
+  }
+
+  adaptInterval(true);
+  const data = res._raw || {};
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
+  const gm   = candidate?.groundingMetadata;
+  const sources = (gm?.groundingChunks || []).map(c => c.web?.uri).filter(Boolean);
+
+  return { text, groundingMetadata: gm, sources };
+}
+
+/* ══════════════════════════════════════════════════════
+   사업자번호 교차검증 (Grounding → bizno 단독 추출)
+   ══════════════════════════════════════════════════════ */
+async function verifyBiznoViaGrounding(companyName, currentBizno) {
+  if (!GCLOUD_API_KEY) throw new Error('Gemini API Key 없음');
+
+  const prompt = `"${companyName}" 기업의 사업자등록번호(사업자번호) 10자리를 구글 검색으로 찾아주세요.
+
+응답 형식 (JSON만):
+{"사업자번호":"000-00-00000","대표자":"이름","출처":"검색결과 URL 또는 사이트명"}
+
+사업자번호를 찾을 수 없으면: {"사업자번호":"","대표자":"","출처":""}`;
+
+  const { text, sources } = await callGeminiGrounded(prompt);
+  const obj = safeParseJSON(text);
+  if (!obj) return null;
+
+  const found = (obj.사업자번호 || '').replace(/[^0-9-]/g, '');
+  const current = (currentBizno || '').replace(/[^0-9-]/g, '');
+
+  return {
+    bizno:    found,
+    대표자:   obj.대표자 || '',
+    sources:  sources,
+    match:    found && current ? found === current : null,  // null = 현재값 없음
+    출처:     obj.출처 || (sources[0] || ''),
+  };
 }
 
 /* ★ HEIC 이미지 → Gemini Vision으로 직접 OCR+구조화 파싱 (변환 없이) */
@@ -1743,6 +2011,11 @@ function render(){
   $("#exportCnt").textContent=`(${tot}건)`;
   $("#searchBtn").disabled=!ck; $("#exportBtn").disabled=!tot; $("#resetBtn").disabled=!tot;
   $("#searchBtn").innerHTML=ck>0?`🤖 선택 ${ck}건 AI 검색`:"🤖 선택 후 AI 검색";
+  const vBtn=$("#biznoVerifyBtn");
+  if(vBtn){
+    vBtn.disabled=!ck;
+    vBtn.innerHTML=ck>0?`🔄 선택 ${ck}건 사업자번호 재확인`:"🔄 사업자번호 재확인";
+  }
 
   if(tot>0){
     $("#statusRow").classList.remove("hidden");
@@ -1791,14 +2064,26 @@ function render(){
     // 업종 칩
     const indChip = r.업종 ? `<span class="industry-chip" title="업종 자동분류">${esc(r.업종)}</span>` : "";
 
-    return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':''}>
+    // 사업자번호 검증 배지
+    let biznoCell = esc(r.사업자번호);
+    if (r._biznoVerified === 'match') {
+      biznoCell += `<span title="구글 검색 교차검증 일치 ✅" style="margin-left:4px;font-size:10px;color:#059669;cursor:default">✅</span>`;
+    } else if (r._biznoVerified === 'mismatch') {
+      const alt = esc(r._biznoAlt || '');
+      biznoCell = `<span style="color:var(--red);font-weight:700" title="불일치: bizno.net=${esc(r.사업자번호)} / 구글=${alt}">${esc(r.사업자번호)}</span>`
+        + `<br><span style="font-size:10px;color:var(--org);cursor:pointer" class="bizno-apply-alt" data-id="${r.id}" data-alt="${alt}" title="구글 검색값으로 교체">🔄 구글: ${alt}</span>`;
+    } else if (r._biznoVerified === 'notfound') {
+      biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
+    }
+
+    return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
       <td style="white-space:nowrap">${thumbHtml}</td>
       <td contenteditable="true" class="editable" data-field="회사명" data-id="${r.id}">${esc(r.회사명)}${dupBadge}</td>
       <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}">${esc(r.담당자)}</td>
       <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}">${esc(r.전화)}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
-      <td contenteditable="true" class="editable" data-field="사업자번호" data-id="${r.id}">${esc(r.사업자번호)}</td>
+      <td data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>
       <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${esc(r.대표자)}</td>
       <td contenteditable="true" class="editable" data-field="업종" data-id="${r.id}">${esc(r.업종)}${indChip}</td>
       <td contenteditable="true" class="editable" data-field="기업형태" data-id="${r.id}">${esc(r.기업형태)}</td>
@@ -1806,8 +2091,9 @@ function render(){
       <td contenteditable="true" class="editable" data-field="주소" data-id="${r.id}">${esc(r.주소)}</td>
       <td>${relH}</td>
       <td><span class="st ${stCls}">${stIcon} ${esc(r.status)}</span></td>
-      <td>
-        <button class="gsearch-btn" data-id="${r.id}" title="구글 검색">🔍</button>
+      <td style="white-space:nowrap">
+        <button class="gsearch-btn" data-id="${r.id}" title="구글 검색 열기">🔍</button>
+        <button class="bizno-verify-btn btn-xs" data-id="${r.id}" title="구글 검색으로 사업자번호 교차검증" style="font-size:10px;padding:3px 6px;border-radius:5px;margin-left:2px">🔄</button>
         <button class="rm-btn" data-id="${r.id}" title="삭제">✕</button>
       </td>
     </tr>`}).join("");
@@ -1827,7 +2113,7 @@ function showThumb(recId) {
   document.body.appendChild(overlay);
 }
 
-function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",_dupOf:null}}
+function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",부스번호:"",_dupOf:null,_biznoVerified:null,_biznoAlt:""}}
 
 /* ═══════════════════════════════════════════════════
    🔍 P3-1: 중복 감지 — 회사명 또는 사업자번호 기준
@@ -3781,8 +4067,9 @@ function exportExcel(){
     "Organization - 웹 주소":r.웹주소,
     "Organization - 기업형태":r.기업형태,
     "Organization - 업종":r.업종,
-    "Organization - 유입경로":"오프/행사",
-    "Organization - 유입경로_상세":exh,
+    "Organization - 유입경로":r.source==="전시회"?"전시회":"오프/행사",
+    "Organization - 유입경로_상세":r.부스번호 ? exh+" "+r.부스번호 : exh,
+    "Organization - 부스번호":r.부스번호||"",
     "Organization - FlowScore":r.flowScore,
     "Organization - 매출(억)":r.매출,
     "Organization - 영업이익":r.영업이익,
@@ -3883,12 +4170,35 @@ $("#urlAddBtn").onclick=()=>{
 $("#ckAll").onchange=()=>{const v=$("#ckAll").checked;records.forEach(r=>r.checked=v);render()};
 $("#tBody").onchange=e=>{if(e.target.classList.contains("rck")){const r=records.find(x=>x.id===e.target.dataset.id);if(r)r.checked=e.target.checked;render()}};
 
-// 테이블 버튼 (삭제 + 구글 검색)
+// 테이블 버튼 (삭제 + 구글 검색 + 사업자번호 교차검증)
 $("#tBody").onclick=e=>{
   const rmBtn=e.target.closest(".rm-btn");
   if(rmBtn){records=records.filter(r=>r.id!==rmBtn.dataset.id);render();return}
+
   const gBtn=e.target.closest(".gsearch-btn");
-  if(gBtn){const rec=records.find(r=>r.id===gBtn.dataset.id);if(rec)googleSearch(rec)}
+  if(gBtn){const rec=records.find(r=>r.id===gBtn.dataset.id);if(rec)googleSearch(rec);return}
+
+  // 🔄 행별 사업자번호 교차검증
+  const vBtn=e.target.closest(".bizno-verify-btn");
+  if(vBtn){
+    const rec=records.find(r=>r.id===vBtn.dataset.id);
+    if(rec) verifySingleBizno(rec);
+    return;
+  }
+
+  // 구글 검색값으로 사업자번호 교체
+  const applyAlt=e.target.closest(".bizno-apply-alt");
+  if(applyAlt){
+    const rec=records.find(r=>r.id===applyAlt.dataset.id);
+    if(rec){
+      rec.사업자번호 = applyAlt.dataset.alt;
+      rec._biznoVerified = 'match';
+      rec._biznoAlt = '';
+      render();
+      toast(`✅ ${rec.회사명} 사업자번호 교체됨: ${rec.사업자번호}`, 'success');
+    }
+    return;
+  }
 };
 
 // 액션 버튼
@@ -3899,13 +4209,779 @@ $("#resetBtn").onclick=()=>{records=[];pendingImages=[];pendingQR=[];renderPrevi
 // AI 검색 중지 버튼
 $("#aiSearchStop").onclick = () => {
   aiSearchAborted = true;
-  /* 진행 중이던 레코드를 대기로 되돌리기 */
   records.forEach(r => { if (r.status === "진행") r.status = "대기"; });
   render();
   toast("AI 검색 중지됨", "error");
 };
 
+// 🔄 사업자번호 교차검증 버튼
+$("#biznoVerifyBtn")?.addEventListener("click", verifyAllBizno);
+
 render();
+
+/* ═══════════════════════════════════════════════════
+   🏛 전시회 참가업체 자동 추출  (v9.0 — 다중 포맷 지원)
+   ═══════════════════════════════════════════════════ */
+let expoAborted = false;
+
+/* ── 입력 포맷 자동 감지 ── */
+function detectInputFormat(url) {
+  if (!url) return 'html';
+  const lower = (url.toLowerCase()).split('?')[0];
+  if (lower.endsWith('.pdf')) return 'pdf';
+  if (lower.match(/\.(xlsx?|csv)$/)) return 'excel';
+  return 'html';
+}
+
+/* ── PDF 업체 목록 파싱 (COEX 등 PDF 리스트) ── */
+async function fetchExhibitorsPDF(source) {
+  let arrayBuffer;
+  if (typeof source === 'string') {
+    updateExpoProgress('📥 PDF 다운로드 중...', 0, 0);
+    const PROXIES = [
+      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    ];
+    let blob = null;
+    for (const proxy of PROXIES) {
+      try {
+        const res = await fetch(proxy(source), { signal: AbortSignal.timeout(25000) });
+        if (res.ok) { blob = await res.blob(); break; }
+      } catch(e) { continue; }
+    }
+    // Worker 프록시 시도
+    if (!blob && getWorkerUrl()) {
+      try {
+        const res = await fetch(getWorkerUrl() + '/proxy?url=' + encodeURIComponent(source), { signal: AbortSignal.timeout(25000) });
+        if (res.ok) blob = await res.blob();
+      } catch(e) {}
+    }
+    if (!blob) throw new Error('PDF를 가져올 수 없습니다. Worker URL 설정을 확인하세요.');
+    arrayBuffer = await blob.arrayBuffer();
+  } else {
+    arrayBuffer = await source.arrayBuffer();
+  }
+
+  updateExpoProgress('📄 PDF 텍스트 추출 중...', 0, 0);
+  if (!window.pdfjsLib) throw new Error('pdf.js가 로드되지 않았습니다.');
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let allText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // 위치 기반 줄바꿈 복원 (같은 y좌표 그룹)
+    let lastY = null;
+    const lineTexts = [];
+    for (const item of content.items) {
+      if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) lineTexts.push('\n');
+      lineTexts.push(item.str + (item.hasEOL ? '\n' : ' '));
+      lastY = item.transform[5];
+    }
+    allText += lineTexts.join('') + '\n\n';
+    updateExpoProgress(`📄 PDF 텍스트 추출 중... (${p}/${pdf.numPages}페이지)`, p, pdf.numPages);
+  }
+
+  if (!allText.trim()) throw new Error('PDF에서 텍스트를 추출할 수 없습니다 (스캔 이미지 PDF일 수 있음).');
+
+  return await extractCompaniesViaGemini(allText, 'pdf');
+}
+
+/* ── 이미지에서 Gemini Vision으로 업체 목록 추출 (KOPPEX 등 이미지 업체표) ── */
+async function fetchExhibitorsFromImage(source) {
+  if (!GCLOUD_API_KEY) throw new Error('Gemini API Key가 설정되지 않았습니다. ⚙️ 설정에서 입력하세요.');
+
+  let base64, mimeType;
+  if (typeof source === 'string') {
+    // URL → fetch → base64
+    updateExpoProgress('📥 이미지 다운로드 중...', 0, 0);
+    const PROXIES = [
+      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    ];
+    let blob = null;
+    for (const proxy of PROXIES) {
+      try {
+        const res = await fetch(proxy(source), { signal: AbortSignal.timeout(20000) });
+        if (res.ok) { blob = await res.blob(); break; }
+      } catch(e) { continue; }
+    }
+    if (!blob) throw new Error('이미지를 가져올 수 없습니다.');
+    mimeType = blob.type || 'image/jpeg';
+    const ab = await blob.arrayBuffer();
+    base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+  } else {
+    // File object
+    mimeType = source.type || 'image/jpeg';
+    const ab = await source.arrayBuffer();
+    base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+  }
+
+  updateExpoProgress('🤖 Gemini Vision AI로 업체 목록 추출 중...', 0, 0);
+
+  const prompt = `이 이미지는 전시회 참가업체 목록입니다.
+
+이미지에서 모든 참가업체 정보를 찾아 JSON 배열로 추출하세요. 각 항목 형식:
+{"회사명":"...","부스번호":"...","전시품":"...","담당자":"...","전화":"...","이메일":"...","주소":"..."}
+
+규칙:
+- 업체명이 없는 행은 제외
+- 부스번호는 테이블의 NO 또는 부스 컬럼 값
+- 모르는 필드는 "" (빈 문자열)
+- JSON 배열만 출력 (마크다운 없이)
+- 전체 이미지를 빠짐없이 스캔해서 모든 업체 포함`;
+
+  const raw = await callGeminiMultimodal(prompt, base64, mimeType);
+
+  let companies = [];
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (jsonMatch) companies = JSON.parse(jsonMatch[0]);
+  } catch(e) {
+    console.warn('[Vision 파싱 오류]', e.message, raw.slice(0, 300));
+    throw new Error('Vision AI 응답 파싱 오류: ' + e.message);
+  }
+  return companies;
+}
+
+/* ── 입력 포맷 배지 업데이트 ── */
+function updateFormatBadge(fmt) {
+  const badge = $('#expoFmtBadge');
+  const hint  = $('#expoFmtHint');
+  if (!badge) return;
+  const map = {
+    pdf:   { label: '📄 PDF',       bg: '#fef3c7', color: '#d97706', hint: 'pdf.js로 텍스트 추출 → Gemini AI 파싱' },
+    image: { label: '🖼 이미지',    bg: '#f5f3ff', color: '#7c3aed', hint: 'Gemini Vision AI로 업체표 인식' },
+    api:   { label: '⚡ JSON API',  bg: '#ecfdf5', color: '#059669', hint: '동적 페이지 — JSON API 직접 호출' },
+    ai:    { label: '🤖 AI 분석',   bg: '#eff6ff', color: '#2563eb', hint: '테이블 미감지 → Gemini AI 텍스트 분석' },
+    html:  { label: '🌐 HTML',      bg: '#f9fafb', color: '#374151', hint: 'HTML 테이블 파싱 + 페이지 순회' },
+    excel: { label: '📊 Excel/CSV', bg: '#ecfdf5', color: '#059669', hint: 'SheetJS로 스프레드시트 파싱' },
+  };
+  const info = map[fmt] || map.html;
+  badge.textContent = info.label;
+  badge.style.cssText = `display:inline-block;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;background:${info.bg};color:${info.color};border:1px solid ${info.color}44`;
+  if (hint) { hint.textContent = '✨ 감지된 포맷: ' + info.label + ' — ' + info.hint; hint.style.display = 'block'; }
+}
+
+/* ── Excel/CSV 파일 업체 목록 파싱 ── */
+async function fetchExhibitorsExcel(file) {
+  const ab = await file.arrayBuffer();
+  const wb = XLSX.read(ab, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  if (!rows.length) throw new Error('Excel/CSV에서 데이터를 찾을 수 없습니다.');
+
+  // 헤더 자동 매핑
+  const headers = Object.keys(rows[0]);
+  const pick = (...candidates) => headers.find(h => candidates.some(c => h.toLowerCase().includes(c.toLowerCase()))) || '';
+
+  const nameCol    = pick('회사명','업체명','company','companyname','법인명','상호','기업명');
+  const boothCol   = pick('부스','booth','NO','no','번호');
+  const productCol = pick('전시품','품목','제품','product','category');
+  const webCol     = pick('홈페이지','웹','web','homepage','url','website');
+  const telCol     = pick('전화','tel','phone');
+  const emailCol   = pick('이메일','email','e-mail');
+  const addrCol    = pick('주소','address');
+  const repCol     = pick('대표','CEO','ceo','representative');
+
+  if (!nameCol) throw new Error('회사명 컬럼을 찾을 수 없습니다. 컬럼명을 확인하세요.');
+
+  return rows.map(r => ({
+    회사명:   String(r[nameCol]    || '').trim(),
+    부스번호: String(r[boothCol]   || '').trim(),
+    전시품:   String(r[productCol] || '').trim(),
+    웹주소:   String(r[webCol]     || '').trim(),
+    전화:     String(r[telCol]     || '').trim(),
+    이메일:   String(r[emailCol]   || '').trim(),
+    주소:     String(r[addrCol]    || '').trim(),
+    대표자:   String(r[repCol]     || '').trim(),
+  })).filter(r => r.회사명.length > 0);
+}
+
+/* ── Gemini AI 기반 업체 목록 추출 (범용 fallback) ── */
+async function extractCompaniesViaGemini(text, mode = 'html') {
+  if (!GCLOUD_API_KEY) throw new Error('Gemini API Key가 설정되지 않았습니다. ⚙️ 설정에서 입력하세요.');
+
+  const maxChars = mode === 'pdf' ? 40000 : 12000;
+  const truncated = text.length > maxChars
+    ? text.slice(0, maxChars) + '\n...(이하 생략)'
+    : text;
+
+  const prompt = `다음은 전시회 참가업체 목록 ${mode === 'pdf' ? 'PDF 문서' : '웹페이지'}에서 추출한 텍스트입니다.
+
+모든 참가업체 정보를 JSON 배열로 추출하세요. 각 항목 형식:
+{"회사명":"...","부스번호":"...","전시품":"...","웹주소":"...","담당자":"...","전화":"...","이메일":"...","주소":"...","대표자":"..."}
+
+규칙:
+- 회사명이 없거나 명백한 헤더/제목 행은 제외
+- 모르는 필드는 "" (빈 문자열)로
+- JSON 배열만 출력 (설명·마크다운 없이, raw JSON만)
+- 최대 500개 항목
+
+텍스트:
+${truncated}`;
+
+  updateExpoProgress('🤖 Gemini AI 분석 중... (잠시 대기)', 0, 0);
+  const raw = await callGeminiRaw(prompt);
+
+  let companies = [];
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (jsonMatch) companies = JSON.parse(jsonMatch[0]);
+  } catch(e) {
+    console.warn('[Gemini 파싱 오류]', e.message, raw.slice(0, 300));
+    throw new Error('Gemini 응답을 파싱할 수 없습니다: ' + e.message);
+  }
+  return companies;
+}
+
+/* ── 동적 페이지용 JSON API 자동 탐색 (KIMES 등 SPA) ── */
+async function tryDiscoverExhibitorAPI(url, html) {
+  // 1) 페이지 내 inline JSON 데이터 탐색
+  const inlinePatterns = [
+    /window\.__(?:DATA|INIT_STATE|STATE|STORE|initialData|pageData|exhibitors?)\s*=\s*(\{[\s\S]{50,}?\});?\s*\n/,
+    /var\s+(?:exhibitors?|companies|listData)\s*=\s*(\[[\s\S]{50,}?\]);?\s*\n/,
+  ];
+  for (const pat of inlinePatterns) {
+    const m = html.match(pat);
+    if (m) {
+      try {
+        const parsed = JSON.parse(m[1]);
+        const arr = Array.isArray(parsed) ? parsed : (parsed.data || parsed.list || parsed.items);
+        if (Array.isArray(arr) && arr.length > 0) {
+          console.log('[인라인 JSON 발견]', arr.length, '개');
+          return { type: 'json', data: arr };
+        }
+      } catch(e) {}
+    }
+  }
+
+  // 2) 공통 JSON API 패턴 탐색
+  let base;
+  try { base = new URL(url); } catch(e) { return null; }
+  const pathBase = base.pathname.replace(/\/[^/]*$/, '');
+  const apiCandidates = [
+    base.origin + '/api/exhibitors',
+    base.origin + '/api/exhibitor/list',
+    base.origin + '/api/v1/exhibitors',
+    base.origin + pathBase + '/api/list',
+    base.href.replace(/[?#].*$/, '') + '.json',
+    base.href.replace(/[?#].*$/, '') + '?format=json',
+    base.href.replace(/[?#].*$/, '') + '?output=json',
+  ];
+
+  for (const apiUrl of apiCandidates) {
+    try {
+      const res = await fetch(apiUrl, {
+        headers: { 'Accept': 'application/json, text/plain' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!res.ok) continue;
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('json')) continue;
+      const json = await res.json();
+      const arr = Array.isArray(json) ? json
+        : (json.data || json.list || json.items || json.result || json.contents);
+      if (Array.isArray(arr) && arr.length > 0) {
+        console.log('[API 발견]', apiUrl, '→', arr.length, '개');
+        return { type: 'api', url: apiUrl, data: arr };
+      }
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
+/* ── JSON API 결과 → companies 배열 정규화 ── */
+function normalizeAPICompanies(arr) {
+  return arr.map(item => {
+    // 다양한 필드명 매핑
+    const name = item.companyName || item.company_name || item.company || item.name
+      || item.exhibitorName || item.exhibitor_name || item.corpName || item.firmName
+      || item.회사명 || item.업체명 || '';
+    if (!name) return null;
+    return {
+      회사명:    name,
+      부스번호:  item.boothNo || item.booth_no || item.booth || item.boothNumber || item.부스번호 || '',
+      전시품:    item.product || item.products || item.category || item.전시품 || item.품목 || '',
+      웹주소:    item.homepage || item.website || item.url || item.웹주소 || '',
+      담당자:    item.contactName || item.contact_name || item.manager || item.담당자 || '',
+      전화:      item.tel || item.phone || item.telephone || item.전화 || '',
+      이메일:    item.email || item.이메일 || '',
+      주소:      item.address || item.주소 || '',
+      대표자:    item.ceo || item.representative || item.대표자 || '',
+      _detailUrl: null,
+    };
+  }).filter(Boolean);
+}
+
+/* 페이지네이션 파라미터 자동 감지 */
+function detectPageParam(url) {
+  const known = ['GotoPage','pageIndex','pageNo','page','p','pg','currentPage','curPage','start'];
+  for (const k of known) {
+    if (new RegExp('[?&]' + k + '=', 'i').test(url)) return k;
+  }
+  return 'GotoPage';
+}
+
+/* 현재 페이지의 최대 페이지 번호 감지 */
+function detectMaxPage(html, pageParam) {
+  let max = 1;
+  const re = new RegExp('[?&]' + pageParam + '=(\\d+)', 'gi');
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const n = parseInt(m[1]);
+    if (n > max) max = n;
+  }
+  return max;
+}
+
+/* HTML 테이블에서 업체 목록 추출 (범용) */
+function parseExhibitorTable(html, baseUrl) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const companies = [];
+
+  // 테이블 행 기반 파싱
+  const rows = doc.querySelectorAll('table tr');
+  for (const row of rows) {
+    const cells = row.querySelectorAll('td');
+    if (cells.length < 2) continue;
+    const name = cells[0]?.textContent?.trim();
+    if (!name || name.length < 2 || /업체명|회사명|company/i.test(name)) continue; // 헤더 제외
+
+    // 상세보기 링크에서 bidx 추출
+    const detailA = row.querySelector('a[href*="detail"]');
+    let detailUrl = null;
+    if (detailA) {
+      try { detailUrl = new URL(detailA.getAttribute('href'), baseUrl).href; } catch(e) {}
+    }
+
+    // 홈페이지 링크
+    let homepage = cells[3]?.querySelector('a')?.href || cells[3]?.textContent?.trim() || '';
+    if (homepage && !/^https?:\/\//i.test(homepage) && homepage.includes('.')) {
+      homepage = 'https://' + homepage;
+    }
+
+    companies.push({
+      회사명: name,
+      부스번호: cells[1]?.textContent?.trim() || '',
+      전시품: cells[2]?.textContent?.trim() || '',
+      웹주소: homepage,
+      _detailUrl: detailUrl,
+    });
+  }
+  return companies;
+}
+
+/* 상세 페이지에서 기업 정보 추출 */
+function parseExhibitorDetail(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const text = doc.body?.textContent || '';
+
+  function pick(labels) {
+    for (const lbl of labels) {
+      // 패턴: "ㆍ대표자 : 홍길동" 또는 "대표자 : 홍길동"
+      const re = new RegExp('(?:ㆍ|•|·)?\\s*' + lbl + '\\s*[:：]\\s*([^\\n\\r\\t]{1,80})', 'i');
+      const m = text.match(re);
+      if (m) {
+        const val = m[1].trim().replace(/\s+/g, ' ');
+        if (val && val.length > 0 && val !== '-') return val;
+      }
+    }
+    return '';
+  }
+
+  // 이메일은 정규식으로 직접 추출 (더 정확)
+  const emailMatch = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+
+  return {
+    대표자:  pick(['대표자','대표이사','CEO']),
+    주소:    pick(['주소','소재지','사업장주소','도로명주소']),
+    전화:    pick(['전화번호','전화','연락처','Tel','TEL']),
+    이메일:  emailMatch ? emailMatch[0] : pick(['이메일','E-mail','Email','e-mail']),
+    웹주소:  pick(['홈페이지','Homepage','Website','웹사이트']),
+    설립일:  pick(['설립연도','설립일','창립']),
+    업종:    pick(['업체분류','업종','사업분류','산업분류']),
+    직원수:  pick(['직원수','임직원수','종업원수']),
+    소개:    pick(['회사소개','기업소개','소개']).slice(0, 200),
+  };
+}
+
+/* 진행 상태 UI 업데이트 */
+function updateExpoProgress(msg, done, total) {
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  const msgEl = $('#expoStatusMsg');
+  const bar   = $('#expoBar2');
+  const cnt   = $('#expoCnt');
+  if (msgEl) msgEl.textContent = msg;
+  if (bar)   bar.style.width = pct + '%';
+  if (cnt)   cnt.textContent = total > 0 ? `${done}/${total} (${pct}%)` : '';
+}
+
+/* 구조 분석 (미리보기) */
+async function detectExpoStructure() {
+  const url = $('#expoUrl').value.trim();
+  if (!url) { toast('URL을 입력하세요', 'error'); return; }
+
+  const btn = $('#expoDetectBtn');
+  btn.textContent = '⏳ 분석 중...'; btn.disabled = true;
+  const resultEl = $('#expoDetectResult');
+  resultEl.style.display = 'none';
+
+  try {
+    const html = await fetchWebpageHTML(url);
+    if (!html) throw new Error('페이지를 가져올 수 없습니다. Worker URL 설정을 확인하세요.');
+
+    const pageParam = detectPageParam(url);
+    const maxPage   = detectMaxPage(html, pageParam);
+    const companies = parseExhibitorTable(html, url);
+    const hasDetail = companies.some(c => c._detailUrl);
+
+    resultEl.innerHTML = `
+      ✅ 구조 분석 완료<br>
+      📄 <strong>페이지 파라미터:</strong> <code>${pageParam}</code> — 감지된 최대 ${maxPage}페이지<br>
+      🏢 <strong>1페이지 업체 수:</strong> ${companies.length}개 (전체 약 ${companies.length * maxPage}개 예상)<br>
+      🔗 <strong>상세페이지:</strong> ${hasDetail ? '✅ 있음 (대표자·전화·이메일 추출 가능)' : '❌ 없음 (목록 정보만 수집)'}<br>
+      <span style="color:var(--sub);font-size:11px">샘플: ${companies.slice(0,3).map(c=>c.회사명).join(', ')}</span>
+    `;
+    resultEl.style.display = 'block';
+  } catch(e) {
+    resultEl.innerHTML = `❌ 오류: ${esc(e.message)}`;
+    resultEl.style.background = 'var(--red-l)';
+    resultEl.style.borderColor = '#fca5a5';
+    resultEl.style.display = 'block';
+  } finally {
+    btn.textContent = '🔍 구조 분석'; btn.disabled = false;
+  }
+}
+
+/* 공통 레코드 등록 헬퍼 */
+async function registerCompanies(allCompanies, includeDetail, delayMs) {
+  let totalAdded = 0;
+  for (let i = 0; i < allCompanies.length; i++) {
+    if (expoAborted) break;
+    const comp = allCompanies[i];
+
+    updateExpoProgress(
+      `${includeDetail && comp._detailUrl ? '🔗 상세조회' : '📌 등록'} (${i + 1}/${allCompanies.length}): ${comp.회사명}`,
+      i, allCompanies.length
+    );
+
+    const rec = emptyRec('전시회');
+    rec.회사명   = comp.회사명   || '';
+    rec.부스번호 = comp.부스번호 || '';
+    rec.업종     = comp.전시품   || comp.업종 || '';
+    rec.웹주소   = comp.웹주소   || '';
+    rec.담당자   = comp.담당자   || '';
+    rec.전화     = comp.전화     || '';
+    rec.이메일   = comp.이메일   || '';
+    rec.주소     = comp.주소     || '';
+    rec.대표자   = comp.대표자   || '';
+    rec.status   = '완료';
+
+    if (includeDetail && comp._detailUrl) {
+      try {
+        const detailHtml = await fetchWebpageHTML(comp._detailUrl);
+        if (detailHtml) {
+          const d = parseExhibitorDetail(detailHtml);
+          if (d.대표자)  rec.대표자  = d.대표자;
+          if (d.주소)    rec.주소    = d.주소;
+          if (d.전화)    rec.전화    = d.전화;
+          if (d.이메일)  rec.이메일  = d.이메일;
+          if (d.웹주소 && !rec.웹주소) rec.웹주소 = d.웹주소;
+          if (d.설립일)  rec.설립일  = d.설립일;
+          if (d.업종 && !rec.업종) rec.업종 = d.업종;
+          if (d.직원수)  rec.직원수  = d.직원수;
+        }
+        await sleep(delayMs);
+      } catch(e) {
+        console.warn('[상세정보 실패]', comp.회사명, e.message);
+      }
+    }
+
+    pushRecord(rec);
+    totalAdded++;
+    if (i % 10 === 0) render();
+  }
+  render();
+  return totalAdded;
+}
+
+/* 메인 수집 함수 (다중 포맷 라우터) */
+async function fetchAllExhibitors() {
+  const url = $('#expoUrl').value.trim();
+  if (!url) { toast('전시회 URL을 입력하세요', 'error'); return; }
+
+  const maxPagesLimit  = parseInt($('#expoMaxPages').value)  || 999;
+  const includeDetail  = $('#expoDetail').checked;
+  const delayMs        = Math.max(100, parseInt($('#expoDelay').value) || 400);
+
+  expoAborted = false;
+  $('#expoStartBtn').disabled = true;
+  $('#expoStopBtn').disabled  = false;
+  $('#expoProgress').classList.remove('hidden');
+  $('#expoDetectResult').style.display = 'none';
+
+  let totalAdded = 0;
+
+  try {
+    const fmt = detectInputFormat(url);
+    // 이미지 URL 감지
+    const isImageUrl = /\.(jpe?g|png|webp|gif|bmp)(\?.*)?$/i.test(url.split('?')[0]);
+
+    // ════════════════════════════════════
+    // 이미지 URL (KOPPEX 등 이미지 업체표)
+    // ════════════════════════════════════
+    if (isImageUrl) {
+      updateFormatBadge('image');
+      toast('🖼 이미지 URL 감지 — Gemini Vision AI로 추출합니다', 'info');
+      const companies = await fetchExhibitorsFromImage(url);
+      if (!companies || companies.length === 0) throw new Error('이미지에서 업체 정보를 추출하지 못했습니다.');
+      toast(`📋 ${companies.length}개 업체 추출 완료. 등록 중...`, 'success');
+      totalAdded = await registerCompanies(companies, false, delayMs);
+      updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
+      toast(`🏛 ${totalAdded}개 참가업체 등록 완료!`, 'success');
+      return;
+    }
+
+    // ════════════════════════════════════
+    // PDF 포맷 (COEX 등 PDF 업체 리스트)
+    // ════════════════════════════════════
+    if (fmt === 'pdf') {
+      updateFormatBadge('pdf');
+      toast('📄 PDF 포맷 감지 — Gemini AI로 파싱합니다', 'info');
+      const companies = await fetchExhibitorsPDF(url);
+      if (!companies || companies.length === 0) throw new Error('PDF에서 업체 정보를 추출하지 못했습니다.');
+      toast(`📋 ${companies.length}개 업체 추출 완료. 등록 중...`, 'success');
+      totalAdded = await registerCompanies(companies, false, delayMs);
+      updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
+      toast(`🏛 ${totalAdded}개 참가업체 등록 완료!`, 'success');
+      return;
+    }
+
+    // ════════════════════════════════════════
+    // HTML 포맷 (테이블 파싱 + API 탐색 + Gemini fallback)
+    // ════════════════════════════════════════
+
+    // ── 1단계: 1페이지 가져와서 구조 파악 ──
+    updateExpoProgress('🔍 페이지 구조 분석 중...', 0, 0);
+    const firstHtml = await fetchWebpageHTML(url);
+    if (!firstHtml) throw new Error('페이지를 가져올 수 없습니다. ⚙️ 설정에서 Cloudflare Worker URL을 입력하세요.');
+
+    // ── 1-A: JSON API 자동 탐색 (KIMES 등 동적 SPA) ──
+    updateExpoProgress('🔍 JSON API 탐색 중...', 0, 0);
+    const apiResult = await tryDiscoverExhibitorAPI(url, firstHtml);
+    if (apiResult) {
+      updateFormatBadge('api');
+      toast(`⚡ JSON API 발견! ${apiResult.data.length}개 업체 직접 추출`, 'success');
+      const companies = normalizeAPICompanies(apiResult.data);
+      totalAdded = await registerCompanies(companies, false, delayMs);
+      updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
+      toast(`🏛 ${totalAdded}개 참가업체 등록 완료!`, 'success');
+      return;
+    }
+
+    updateFormatBadge('html');
+    const pageParam = detectPageParam(url);
+    const detectedMax = detectMaxPage(firstHtml, pageParam);
+    const maxPage   = Math.min(detectedMax, maxPagesLimit);
+
+    console.log(`[전시회] 감지: pageParam="${pageParam}", maxPage=${maxPage}`);
+    updateExpoProgress(`📋 총 ${maxPage}페이지 감지 완료`, 0, maxPage);
+
+    // ── 2단계: 모든 페이지 순회해서 업체 목록 수집 ──
+    const allCompanies = [];
+
+    for (let pg = 1; pg <= maxPage; pg++) {
+      if (expoAborted) break;
+
+      let pageHtml = firstHtml;
+      if (pg > 1) {
+        let pageUrl;
+        const re = new RegExp('([?&])' + pageParam + '=\\d+');
+        if (re.test(url)) {
+          pageUrl = url.replace(re, `$1${pageParam}=${pg}`);
+        } else {
+          pageUrl = url + (url.includes('?') ? '&' : '?') + `${pageParam}=${pg}`;
+        }
+        updateExpoProgress(`📋 페이지 ${pg}/${maxPage} 가져오는 중...`, pg - 1, maxPage);
+        pageHtml = await fetchWebpageHTML(pageUrl);
+        await sleep(delayMs);
+      }
+
+      if (!pageHtml) { console.warn(`[전시회] 페이지 ${pg} 실패`); continue; }
+
+      const companies = parseExhibitorTable(pageHtml, url);
+      allCompanies.push(...companies);
+      updateExpoProgress(`✅ 페이지 ${pg}/${maxPage} — 누적 ${allCompanies.length}개`, pg, maxPage);
+    }
+
+    // ── 2-B: 테이블 파싱 실패 시 Gemini AI fallback ──
+    if (allCompanies.length === 0) {
+      if (!GCLOUD_API_KEY) {
+        throw new Error('업체 목록을 찾을 수 없습니다. URL이 참가업체 목록 페이지인지 확인하거나, Gemini API Key를 설정하면 AI로 재시도합니다.');
+      }
+      updateFormatBadge('ai');
+      toast('⚡ 테이블 감지 실패 → Gemini AI로 재시도합니다...', 'info');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(firstHtml, 'text/html');
+      const pageText = doc.body?.textContent || firstHtml;
+      const geminiCompanies = await extractCompaniesViaGemini(pageText, 'html');
+      if (geminiCompanies.length === 0) throw new Error('Gemini AI도 업체 목록을 찾을 수 없습니다. URL이 참가업체 목록 페이지인지 확인하세요.');
+      allCompanies.push(...geminiCompanies);
+      toast(`🤖 Gemini AI: ${geminiCompanies.length}개 업체 추출 완료`, 'success');
+    }
+
+    toast(`📋 ${allCompanies.length}개 업체 목록 수집 완료. ${includeDetail ? '상세정보 조회 중...' : '등록 중...'}`, 'success');
+
+    // ── 3단계: 레코드 생성 (공통 헬퍼) ──
+    totalAdded = await registerCompanies(allCompanies, includeDetail, delayMs);
+    updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
+    toast(`🏛 ${totalAdded}개 참가업체 등록 완료! 세일즈맵 엑셀로 다운로드하세요.`, 'success');
+
+  } catch(e) {
+    console.error('[전시회 추출 오류]', e);
+    toast('❌ ' + e.message, 'error');
+    updateExpoProgress('❌ 오류 — ' + e.message, 0, 1);
+  } finally {
+    $('#expoStartBtn').disabled = false;
+    $('#expoStopBtn').disabled  = true;
+  }
+}
+
+/* ── 파일 모드 수집 핸들러 ── */
+let expoSelectedFile = null;
+
+async function fetchAllExhibitorsFromFile() {
+  const file = expoSelectedFile;
+  if (!file) { toast('파일을 먼저 선택하세요', 'error'); return; }
+
+  const delayMs = Math.max(100, parseInt($('#expoDelay').value) || 400);
+  expoAborted = false;
+  $('#expoStartBtn').disabled = true;
+  $('#expoStopBtn').disabled  = false;
+  $('#expoProgress').classList.remove('hidden');
+
+  let totalAdded = 0;
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let companies = [];
+
+    if (['jpg','jpeg','png','webp','gif','bmp'].includes(ext)) {
+      updateFormatBadge('image');
+      toast('🖼 이미지 포맷 — Gemini Vision AI로 추출합니다', 'info');
+      companies = await fetchExhibitorsFromImage(file);
+    } else if (ext === 'pdf') {
+      updateFormatBadge('pdf');
+      toast('📄 PDF 포맷 — 텍스트 추출 후 AI 파싱합니다', 'info');
+      companies = await fetchExhibitorsPDF(file);
+    } else if (['xlsx','xls','csv'].includes(ext)) {
+      updateFormatBadge('excel');
+      toast('📊 Excel/CSV 포맷 — SheetJS로 파싱합니다', 'info');
+      companies = await fetchExhibitorsExcel(file);
+    } else {
+      throw new Error('지원하지 않는 파일 형식입니다 (.jpg/.png/.pdf/.xlsx/.csv만 가능)');
+    }
+
+    if (!companies || companies.length === 0) throw new Error('파일에서 업체 정보를 추출하지 못했습니다.');
+    toast(`📋 ${companies.length}개 업체 추출 완료. 등록 중...`, 'success');
+    totalAdded = await registerCompanies(companies, false, delayMs);
+    updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
+    toast(`🏛 ${totalAdded}개 참가업체 등록 완료!`, 'success');
+  } catch(e) {
+    console.error('[파일 추출 오류]', e);
+    toast('❌ ' + e.message, 'error');
+    updateExpoProgress('❌ 오류 — ' + e.message, 0, 1);
+  } finally {
+    $('#expoStartBtn').disabled = false;
+    $('#expoStopBtn').disabled  = true;
+  }
+}
+
+// 이벤트 바인딩
+document.addEventListener('DOMContentLoaded', () => {
+  // 입력 모드 전환 (URL / 파일)
+  document.querySelectorAll('.expo-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.expo-mode-btn').forEach(b => {
+        b.style.cssText = 'flex:1;padding:7px 10px;border:1.5px solid var(--bdr);background:var(--card2);color:var(--sub);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer';
+      });
+      btn.style.cssText = 'flex:1;padding:7px 10px;border:1.5px solid var(--pri);background:var(--pri-l);color:var(--pri);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer';
+      const mode = btn.dataset.mode;
+      $('#expoModeUrl').style.display  = mode === 'url'  ? 'block' : 'none';
+      $('#expoModeFile').style.display = mode === 'file' ? 'block' : 'none';
+    });
+  });
+
+  // 파일 드롭존
+  const dropZone = $('#expoFileDrop');
+  const fileInput = $('#expoFileInput');
+  if (dropZone && fileInput) {
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--pri)'; dropZone.style.background = 'var(--pri-l)'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = 'var(--bdr2)'; dropZone.style.background = 'var(--card2)'; });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--bdr2)'; dropZone.style.background = 'var(--card2)';
+      const file = e.dataTransfer.files[0];
+      if (file) setExpoFile(file);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) setExpoFile(fileInput.files[0]); });
+  }
+
+  function setExpoFile(file) {
+    expoSelectedFile = file;
+    const ext = file.name.split('.').pop().toLowerCase();
+    const fmtMap = { jpg:'🖼 이미지 (Vision AI)', jpeg:'🖼 이미지 (Vision AI)', png:'🖼 이미지 (Vision AI)', webp:'🖼 이미지 (Vision AI)', gif:'🖼 이미지', bmp:'🖼 이미지', pdf:'📄 PDF (텍스트 추출)', xlsx:'📊 Excel', xls:'📊 Excel', csv:'📊 CSV' };
+    const fmtLabel = fmtMap[ext] || '📂 파일';
+    const info = $('#expoFileInfo');
+    if (info) { info.style.display = 'block'; info.innerHTML = `✅ <strong>${esc(file.name)}</strong> — ${fmtLabel} · ${(file.size/1024).toFixed(0)}KB`; }
+    toast(`파일 선택됨: ${file.name}`, 'success');
+  }
+
+  // URL 입력 시 포맷 힌트
+  $('#expoUrl')?.addEventListener('input', () => {
+    const url = $('#expoUrl').value.trim();
+    const fmt = detectInputFormat(url);
+    if (url.length > 10) updateFormatBadge(fmt);
+  });
+
+  // 시작 버튼 — 모드에 따라 분기
+  $('#expoStartBtn')?.addEventListener('click', () => {
+    const activeMode = document.querySelector('.expo-mode-btn.active, .expo-mode-btn[style*="var(--pri-l)"]');
+    const isFileMode = $('#expoModeFile')?.style.display !== 'none';
+    if (isFileMode && expoSelectedFile) {
+      fetchAllExhibitorsFromFile();
+    } else {
+      fetchAllExhibitors();
+    }
+  });
+
+  $('#expoStopBtn')?.addEventListener('click', () => {
+    expoAborted = true;
+    toast('수집 중지됨', 'error');
+    $('#expoStopBtn').disabled = true;
+  });
+  $('#expoDetectBtn')?.addEventListener('click', detectExpoStructure);
+
+  // 프리셋 버튼
+  document.querySelectorAll('.expo-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const u = btn.dataset.url;
+      // URL 모드로 전환
+      document.querySelector('[data-mode="url"]')?.click();
+      if (u) {
+        $('#expoUrl').value = u;
+        updateFormatBadge(detectInputFormat(u));
+        toast('URL 설정됨', 'success');
+      } else {
+        $('#expoUrl').value = '';
+        $('#expoUrl').focus();
+        toast('URL을 직접 입력하세요', '');
+      }
+    });
+  });
+});
 
 /* ═══════════════════════════════════════════════════
    ⚙️ 설정 모달 — API Key 관리 (P1)
