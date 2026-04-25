@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.10 — BBS maxPage 정확 감지 (페이지네이션/상세링크 구분)</title>
+<title>OCR Pro v9.13 — 이메일 오인식 방지 (이미지·JS 파일명 제외)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -108,6 +108,14 @@ tr:hover td{background:var(--pri-l)}
 td[contenteditable]{cursor:text;outline:none;border-radius:4px;transition:background .15s}
 td[contenteditable]:focus{background:var(--pri-l);box-shadow:inset 0 0 0 1.5px var(--pri)}
 td[contenteditable]:hover{background:var(--card2)}
+/* 사업자번호 빈 셀 */
+td.bizno-empty{background:#fff8ed!important;cursor:text}
+td.bizno-empty::before{content:attr(data-ph);color:#bbb;font-style:italic;font-size:11px;pointer-events:none}
+td.bizno-empty:focus{background:var(--pri-l)!important}
+td.bizno-empty:focus::before{content:""}
+/* 사업자번호 편집 버튼 */
+.bizno-edit-btn{background:none;border:none;cursor:pointer;font-size:10px;opacity:.35;padding:0 2px;vertical-align:middle;transition:opacity .15s}
+.bizno-edit-btn:hover{opacity:1}
 .cnt-row{display:flex;justify-content:flex-end;font-size:12px;color:var(--sub);padding:4px 0;gap:12px}.cnt-row.hidden{display:none}
 .cnt-item{display:flex;align-items:center;gap:4px}
 .cnt-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
@@ -191,7 +199,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.10</span>
+  <span class="ver">v9.13</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -555,7 +563,7 @@ if(location.protocol==="file:"){
 </div>
 
 <!-- 편집 안내 -->
-<div id="editHint" class="edit-hint hidden">💡 테이블 셀을 직접 클릭하여 내용을 수정할 수 있습니다 · 🔍 버튼으로 구글 검색</div>
+<div id="editHint" class="edit-hint hidden">💡 셀을 직접 클릭하여 편집 · <span style="background:#fff8ed;color:#92400e;border-radius:3px;padding:0 4px;font-size:10px">주황색</span> = 사업자번호 미입력 (클릭 후 직접 입력 가능) · 🔍 버튼으로 구글 검색</div>
 
 <!-- 테이블 -->
 <div id="tblWrap" class="tbl-wrap hidden">
@@ -1439,8 +1447,8 @@ function extractCompanyInfoFromHTML(html) {
   if (m) result.전화 = m[1];
 
   /* 이메일 */
-  m = html.match(/[\w.-]+@[\w.-]+\.\w{2,}/);
-  if (m) result.이메일 = m[0];
+  const emailVal = extractEmailSafe(html);
+  if (emailVal) result.이메일 = emailVal;
 
   /* 사업자번호 */
   m = html.match(/\d{3}-\d{2}-\d{5}/);
@@ -2092,6 +2100,63 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
    ═══════════════════════════════════════════════════ */
 const EDIT_FIELDS=["회사명","담당자","전화","이메일","사업자번호","대표자","업종","기업형태","웹주소","주소"];
 
+/* ═══════════════════════════════════════════════════
+   📧 이메일 안전 추출 — 이미지·스크립트 파일명 오인식 방지
+   ═══════════════════════════════════════════════════ */
+const EMAIL_BAD_EXT = /\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff?|js|jsx|ts|tsx|css|json|xml|mp4|mov|zip|pdf|exe|dll)(\?.*)?$/i;
+const EMAIL_GOOD_TLD = /\.(kr|com|net|org|co\.kr|or\.kr|go\.kr|io|biz|info|me|email|tv|cc|ai)$/i;
+
+function extractEmailSafe(text) {
+  if (!text) return null;
+  const re = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const em = m[0];
+    if (EMAIL_BAD_EXT.test(em)) continue;           // 이미지·JS 파일명 제외
+    const parts = em.split('@');
+    if (!parts[1] || !parts[1].includes('.')) continue; // 도메인에 점 없으면 제외
+    if (parts[0].length < 2) continue;              // 로컬파트 1자 이하 제외 (@2x 등)
+    if (/^\d+$/.test(parts[0])) continue;           // 로컬파트 순수 숫자 제외
+    if (/^[0-9a-f]{8,}$/i.test(parts[0])) continue;// 로컬파트 해시값 제외 (CDN)
+    return em;
+  }
+  return null;
+}
+
+function extractEmailsAllSafe(text) {
+  if (!text) return [];
+  const re = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  const results = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const em = m[0];
+    if (EMAIL_BAD_EXT.test(em)) continue;
+    const parts = em.split('@');
+    if (!parts[1] || !parts[1].includes('.')) continue;
+    if (parts[0].length < 2) continue;
+    if (/^\d+$/.test(parts[0])) continue;
+    if (/^[0-9a-f]{8,}$/i.test(parts[0])) continue;
+    results.push(em);
+  }
+  return results;
+}
+
+/* 사업자번호 셀 HTML 생성 (배지 포함) — focusout 후 재렌더링에도 사용 */
+function buildBiznoHtml(r) {
+  if (!r.사업자번호) return "";
+  let html = esc(r.사업자번호);
+  if (r._biznoVerified === 'match') {
+    html += `<span title="구글 검색 교차검증 일치 ✅" style="margin-left:4px;font-size:10px;color:#059669;cursor:default">✅</span>`;
+  } else if (r._biznoVerified === 'mismatch') {
+    const alt = esc(r._biznoAlt || '');
+    html = `<span style="color:var(--red);font-weight:700" title="불일치: bizno.net=${esc(r.사업자번호)} / 구글=${alt}">${esc(r.사업자번호)}</span>`
+      + `<br><span style="font-size:10px;color:var(--org);cursor:pointer" class="bizno-apply-alt" data-id="${r.id}" data-alt="${alt}" title="구글 검색값으로 교체">🔄 구글: ${alt}</span>`;
+  } else if (r._biznoVerified === 'notfound') {
+    html += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
+  }
+  return html;
+}
+
 function render(){
   const ck=records.filter(r=>r.checked).length, tot=records.length;
   const done=records.filter(r=>r.status==="완료").length, wait=records.filter(r=>r.status==="대기").length;
@@ -2140,6 +2205,24 @@ function render(){
     dupBadgeEl.style.display = "none";
   }
 
+  // 사업자번호 미확인 카운트 배지
+  const noBiznoCount = records.filter(r => !r.사업자번호).length;
+  let noBiznoBadgeEl = $("#noBiznoBadge");
+  if (!noBiznoBadgeEl) {
+    noBiznoBadgeEl = document.createElement("span");
+    noBiznoBadgeEl.id = "noBiznoBadge";
+    noBiznoBadgeEl.style.cssText = "font-size:11px;margin-left:8px;cursor:pointer";
+    noBiznoBadgeEl.title = "사업자번호 미확인 — 클릭하면 해당 항목만 선택";
+    noBiznoBadgeEl.onclick = () => { records.forEach(r => r.checked = !r.사업자번호); render(); };
+    if (dupBadgeEl) dupBadgeEl.after(noBiznoBadgeEl);
+  }
+  if (noBiznoCount > 0 && tot > 0) {
+    noBiznoBadgeEl.innerHTML = `<span style="display:inline-block;background:#fff3cd;color:#92400e;border:1px solid #fbbf24;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">⚠️ 사업자번호 미확인 ${noBiznoCount}건</span>`;
+    noBiznoBadgeEl.style.display = "";
+  } else {
+    noBiznoBadgeEl.style.display = "none";
+  }
+
   $("#tBody").innerHTML=records.map(r=>{
     const srcCls=r.source==="QR"?"src-qr":r.source==="이미지"?"src-img":r.source==="문서"?"src-doc":"src-url";
     const srcLbl=r.source==="QR"?"📱":r.source==="이미지"?"📷":r.source==="문서"?"📄":"🔗";
@@ -2169,9 +2252,9 @@ function render(){
       biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
     }
 
-    // People - 전화: 010 계열 모바일만
+    // People - 전화: 010 계열 모바일 우선, 없으면 일반 전화
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
-    const mobileP = esc(allPhones.find(p => isMobile(p)) || "");
+    const mobileP = esc(allPhones.find(p => isMobile(p)) || r.전화 || "");
     // People - 이름: 담당자 있으면 담당자, 없으면 대표자
     const peopleName = esc(r.담당자 || r.대표자 || "");
 
@@ -2179,10 +2262,13 @@ function render(){
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
       <td style="white-space:nowrap">${thumbHtml}</td>
       <td contenteditable="true" class="editable" data-field="회사명" data-id="${r.id}">${esc(r.회사명)}${dupBadge}</td>
-      <td data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>
+      ${r.사업자번호
+        ? `<td class="editable" contenteditable="true" data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>`
+        : `<td class="editable bizno-empty" contenteditable="true" data-field="사업자번호" data-id="${r.id}" data-ph="번호 입력..." style="font-size:12px;padding:6px 8px"></td>`
+      }
       <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${esc(r.대표자)}</td>
-      <td style="font-size:12px;color:var(--sub)">${peopleName}</td>
-      <td style="font-size:12px">${mobileP}</td>
+      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${peopleName}</td>
+      <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}" style="font-size:12px">${mobileP}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
       <td>${relH}</td>
@@ -2299,15 +2385,52 @@ function autoClassifyIndustry(name, url) {
 /* ═══════════════════════════════════════════════════
    셀 편집 → 레코드 반영
    ═══════════════════════════════════════════════════ */
+/* 사업자번호 셀 포커스 시: 배지 HTML 제거하고 순수 번호 텍스트만 표시 */
+document.addEventListener("focusin", e => {
+  if (!e.target.classList || !e.target.classList.contains("editable")) return;
+  if (e.target.dataset.field !== "사업자번호") return;
+  const id = e.target.dataset.id;
+  const rec = records.find(r => r.id === id);
+  if (rec && e.target.innerHTML !== (rec.사업자번호 || "")) {
+    e.target.textContent = rec.사업자번호 || "";
+    // 커서를 끝으로 이동
+    const range = document.createRange(), sel = window.getSelection();
+    range.selectNodeContents(e.target); range.collapse(false);
+    sel.removeAllRanges(); sel.addRange(range);
+  }
+});
+
 document.addEventListener("focusout",e=>{
   if(!e.target.classList||!e.target.classList.contains("editable"))return;
   const id=e.target.dataset.id, field=e.target.dataset.field;
   const rec=records.find(r=>r.id===id);
   if(rec){
-    rec[field]=e.target.textContent.trim();
+    const val = e.target.textContent.trim();
+    rec[field] = val;
     /* 내용 입력 시 상태를 완료로 변경 */
     const filled=EDIT_FIELDS.some(f=>rec[f]);
     if(filled&&rec.status==="대기")rec.status="완료";
+    /* 사업자번호 편집 완료: 배지 HTML 복원 + 빈셀 스타일 + 미확인 배지 갱신 */
+    if(field==="사업자번호"){
+      if(val){
+        e.target.classList.remove("bizno-empty");
+        e.target.innerHTML = buildBiznoHtml(rec);
+      } else {
+        e.target.classList.add("bizno-empty");
+        e.target.innerHTML = "";
+      }
+      // 미확인 카운트 배지 갱신
+      const noBiznoCount = records.filter(r => !r.사업자번호).length;
+      const badge = $("#noBiznoBadge");
+      if(badge){
+        if(noBiznoCount>0){
+          badge.innerHTML = `<span style="display:inline-block;background:#fff3cd;color:#92400e;border:1px solid #fbbf24;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">⚠️ 사업자번호 미확인 ${noBiznoCount}건</span>`;
+          badge.style.display="";
+        } else {
+          badge.style.display="none";
+        }
+      }
+    }
   }
 });
 
@@ -2432,10 +2555,8 @@ function classifyToken(t){
   /* 1. 사업자번호 */
   if(/\d{3}-\d{2}-\d{5}/.test(t)) return {field:"사업자번호",value:t.match(/\d{3}-\d{2}-\d{5}/)[0]};
 
-  /* 2. 이메일 (@@오타는 전처리에서 이미 보정됨) */
-  if(/[\w.-]+@[\w.-]+\.\w{2,}/i.test(t)){
-    return {field:"이메일",value:t.match(/[\w.-]+@[\w.-]+\.\w{2,}/i)[0]};
-  }
+  /* 2. 이메일 (@@오타는 전처리에서 이미 보정됨, 이미지·JS 파일명 제외) */
+  { const em = extractEmailSafe(t); if (em) return {field:"이메일", value:em}; }
 
   /* 3. 휴대폰 (+82-10 → 010 변환 포함) */
   if(/\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)){
@@ -2553,8 +2674,8 @@ function parseFullTextToRecords(fullText){
     /* @@ 오타 보정 */
     processLine=processLine.replace(/@@+/g,"@");
     /* 이메일이 텍스트에 붙은 경우: "abc김성찬sungchan@email.com경기도" → 분리 */
-    const embeddedEmail=processLine.match(/[\w.-]+@[\w.-]+\.\w{2,}/gi);
-    if(embeddedEmail){
+    const embeddedEmail=extractEmailsAllSafe(processLine);
+    if(embeddedEmail.length){
       for(const em of embeddedEmail){
         processLine=processLine.replace(em," "+em+" ");
       }
@@ -2831,9 +2952,9 @@ function parseBusinessCard(text){
   const bizMatch=text.match(/\d{3}-\d{2}-\d{5}/);
   if(bizMatch) result.사업자번호=bizMatch[0];
 
-  /* ── 2. 이메일 (라벨 제거) ── */
-  const emailMatch=text.match(/[\w.-]+@[\w.-]+\.\w{2,}/);
-  if(emailMatch) result.이메일=emailMatch[0];
+  /* ── 2. 이메일 (라벨 제거, 이미지·JS 파일명 오인식 방지) ── */
+  const emailMatch = extractEmailSafe(text);
+  if(emailMatch) result.이메일 = emailMatch;
 
   /* ── 3. 전화·휴대폰 (라벨 기반 분류 우선) ── */
   for(const line of lines){
@@ -3035,7 +3156,7 @@ ${ocrText}
    ═══════════════════════════════════════════════════ */
 function extractInfoFromText(text){
   const bizNo=text.match(/\d{3}-\d{2}-\d{5}/g);
-  const emails=text.match(/[\w.-]+@[\w.-]+\.\w{2,}/g);
+  const emails=extractEmailsAllSafe(text);
   const phones=text.match(/(0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4})/g);
   const urls=text.match(/https?:\/\/[^\s,<>"']+/g);
   return {사업자번호:(bizNo||[])[0]||"",이메일:(emails||[])[0]||"",전화:(phones||[])[0]||"",웹주소:(urls||[])[0]||""};
@@ -5412,14 +5533,14 @@ function parseExhibitorDetail(html) {
     return '';
   }
 
-  // 이메일은 정규식으로 직접 추출 (더 정확)
-  const emailMatch = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  // 이메일은 안전 추출 함수 사용 (이미지·JS 파일명 오인식 방지)
+  const emailMatch = extractEmailSafe(text);
 
   return {
     대표자:  pick(['대표자','대표이사','CEO']),
     주소:    pick(['주소','소재지','사업장주소','도로명주소']),
     전화:    pick(['전화번호','전화','연락처','Tel','TEL']),
-    이메일:  emailMatch ? emailMatch[0] : pick(['이메일','E-mail','Email','e-mail']),
+    이메일:  emailMatch || pick(['이메일','E-mail','Email','e-mail']),
     웹주소:  pick(['홈페이지','Homepage','Website','웹사이트']),
     설립일:  pick(['설립연도','설립일','창립']),
     업종:    pick(['업체분류','업종','사업분류','산업분류']),
@@ -5897,6 +6018,50 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.13",
+    date: "2026-04-25 14:57",
+    title: "이메일 오인식 방지 — 이미지·JS·CDN 파일명 @기호 제외",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "extractEmailSafe() 헬퍼 신규 추가 — 이미지(.png/.jpg 등)·스크립트(.js/.ts 등) 확장자, 순수숫자 로컬파트, 해시값(CDN) 제외 필터 적용" },
+      { type: "fix",     text: "extractEmailsAllSafe() 복수 추출 버전 추가 — embeddedEmail 파싱 시 사용" },
+      { type: "fix",     text: "6곳 전부 교체: extractWebpageInfo·classifyToken·embeddedEmail·OCR 파서 2곳·웹직접추출 파서" },
+    ],
+    learnLog: [
+      { text: "오인식 사례: Logo_A-01_1@2x.326760cc.png → @2x 가 이메일로 오인식. cfile8.uf@99BB7A...js → CDN 파일해시 오인식" },
+      { text: "기존 패턴 /[\\w.-]+@[\\w.-]+\\.\\w{2,}/ 은 확장자 검사 없이 @가 포함된 모든 문자열 매칭 → 이미지 파일명·CDN URL 오인식" },
+    ]
+  },
+  {
+    version: "v9.12",
+    date: "2026-04-25 14:54",
+    title: "전체 셀 편집 가능 — 담당직원·전화·사업자번호 수정 지원",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "담당직원(담당자) 셀 contenteditable 추가 — 클릭 후 바로 이름 수정 가능" },
+      { type: "feat",    text: "전화(010) 셀 contenteditable 추가 — 클릭 후 번호 수정 가능. 모바일 번호 없을 시 전화 번호 표시" },
+      { type: "feat",    text: "사업자번호 focusin 핸들러 추가 — 편집 시작 시 배지(✅❓) HTML 제거 후 순수 번호만 표시" },
+      { type: "feat",    text: "사업자번호 focusout 핸들러 개선 — 입력 완료 후 buildBiznoHtml()로 배지 즉시 복원" },
+      { type: "refactor",text: "buildBiznoHtml(r) 헬퍼 함수 분리 — 사업자번호 배지 HTML 생성 로직 재사용 가능" },
+    ],
+  },
+  {
+    version: "v9.11",
+    date: "2026-04-25 14:50",
+    title: "사업자번호 인라인 편집 + 미확인 배지",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "사업자번호 셀 직접 편집 — 빈 셀 클릭 시 바로 번호 입력 가능. 기존 번호도 클릭 후 수정 가능" },
+      { type: "feat",    text: "사업자번호 미입력 셀: 주황색 배경 + '번호 입력...' placeholder 표시 — 누락 항목 한눈에 식별" },
+      { type: "feat",    text: "⚠️ 사업자번호 미확인 N건 배지 — 헤더 카운터 옆에 표시. 클릭 시 미확인 항목만 선택" },
+      { type: "improve", text: "편집 안내 문구 업데이트 — 주황색 셀 의미 설명 추가" },
+      { type: "improve", text: "focusout 핸들러: 사업자번호 입력 완료 즉시 주황색 해제 + 미확인 배지 카운트 실시간 갱신" },
+    ],
+    learnLog: [
+      { text: "교맥동(gyomaekdong.co.kr): 프랜차이즈 본사 bizno API 미매칭 → 수동 입력 필요. Google 검색 결과: 화성향남점 325-03-03343 (가맹점 기준이므로 본사 번호와 다를 수 있음)" },
+    ]
+  },
   {
     version: "v9.10",
     date: "2026-04-25 14:37",
