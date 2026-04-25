@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.13 — 이메일 오인식 방지 (이미지·JS 파일명 제외)</title>
+<title>OCR Pro v9.14 — SIMTOS 전체 페이지 수집 + detectMaxPage 3단계 fallback</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.13</span>
+  <span class="ver">v9.14</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -5288,7 +5288,7 @@ const EXPO_SITE_PRESETS = {
     pageParam: 'page',
     detailFields: ['부스번호', '브랜드명', '품목', '홈페이지 주소', '회차'],
   },
-  'simtos.org':  { name: 'SIMTOS', type: 'html_table', pageParam: 'pageIndex' },
+  'simtos.org':  { name: 'SIMTOS', type: 'html_table', pageParam: 'GotoPage' },
   'kimes.kr':    { name: 'KIMES',  type: 'json_api',   pageParam: 'page' },
   'ikfa.or.kr':  { name: '한국프랜차이즈산업협회', type: 'bbs', pageParam: 'page' },
 };
@@ -5344,11 +5344,34 @@ function detectPageParam(url) {
 /* 현재 페이지의 최대 페이지 번호 감지 */
 function detectMaxPage(html, pageParam) {
   let max = 1;
-  const re = new RegExp('[?&]' + pageParam + '=(\\d+)', 'gi');
   let m;
-  while ((m = re.exec(html)) !== null) {
+
+  // ① URL 쿼리 파라미터 방식 (기존) — ?pageParam=N 또는 &pageParam=N
+  const re1 = new RegExp('[?&]' + pageParam + '=(\\d+)', 'gi');
+  while ((m = re1.exec(html)) !== null) {
     const n = parseInt(m[1]);
     if (n > max) max = n;
+  }
+  if (max > 1) return max;
+
+  // ② JavaScript 함수 호출 방식 fallback
+  // fn_linkPage('2'), goPage(2), fnGoPage("3"), movePage(4), gotoPage(5) 등
+  const re2 = /(?:fn_linkPage|fnLinkPage|goPage|gotoPage|fnGoPage|movePage|changePage|fnPage|linkPage)\s*\([^)]*?['""]?\s*(\d+)\s*['""]?[^)]*\)/gi;
+  while ((m = re2.exec(html)) !== null) {
+    const n = parseInt(m[1]);
+    if (n > max && n < 10000) max = n;
+  }
+  if (max > 1) return max;
+
+  // ③ paging/pagination 컨테이너 내 최대 숫자 fallback
+  // class에 paging·pagination·page-nav·paginate·pageList 포함된 영역 탐색
+  const re3 = /class=["'][^"']*(?:paging|pagination|page.?nav|paginate|pageList|page_num)[^"']*["'][^>]*>([\s\S]{0,1500}?)(?:<\/(?:div|ul|nav|p)>|\bclass=["'][^"']*(?:content|cont|list|main)[^"']*["'])/gi;
+  while ((m = re3.exec(html)) !== null) {
+    const nums = m[1].match(/\b(\d{1,4})\b/g) || [];
+    for (const ns of nums) {
+      const n = parseInt(ns);
+      if (n > max && n < 9999) max = n;
+    }
   }
   return max;
 }
@@ -6018,6 +6041,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.14",
+    date: "2026-04-25 15:23",
+    title: "SIMTOS 전체 페이지 수집 + detectMaxPage 3단계 fallback",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "EXPO_SITE_PRESETS simtos.org pageParam 오타 수정: 'pageIndex' → 'GotoPage'. 기존엔 maxPage=1로 감지 → 1페이지(20개)만 수집. 수정 후 GotoPage=10 감지 → 전체 수집 가능" },
+      { type: "feat",    text: "detectMaxPage() 3단계 fallback 강화 — ① URL 쿼리파라미터(기존) → ② JavaScript 함수 호출(fn_linkPage·goPage·movePage 등) → ③ paging·pagination 클래스 컨테이너 내 최대 숫자" },
+    ],
+    learnLog: [
+      { text: "SIMTOS 실제 페이지네이션 URL: ?GotoPage=2&SearchType=&SearchData=&Sorts=0. curl ?GotoPage=2 → 다른 bidx 목록 반환 확인. GotoPage=1~10 (총 200개 이상 예상)" },
+      { text: "오인식 원인: EXPO_SITE_PRESETS에 pageParam='pageIndex' 오타 → detectMaxPage가 'pageIndex' 패턴 검색 → HTML에 없음 → max=1 → 1페이지만 수집" },
+    ]
+  },
   {
     version: "v9.13",
     date: "2026-04-25 14:57",
