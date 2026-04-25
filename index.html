@@ -80,6 +80,7 @@ body{margin:0;background:var(--bg);color:var(--txt)}
 .tbl-wrap.hidden{display:none}
 table{width:100%;border-collapse:collapse;font-size:12px;min-width:1200px}
 thead{background:var(--card2);position:sticky;top:0;z-index:2}
+.sm-col{display:block;font-size:9px;font-weight:400;color:var(--mut);margin-top:1px;letter-spacing:-.01em}
 th{padding:9px 8px;text-align:left;font-weight:600;color:var(--sub);font-size:11px;border-bottom:2px solid var(--bdr);white-space:nowrap}
 td{padding:8px 8px;border-bottom:1px solid var(--bdr);vertical-align:middle}
 tr:hover td{background:var(--pri-l)}
@@ -529,17 +530,17 @@ if(location.protocol==="file:"){
 <thead><tr>
   <th style="width:32px"><input type="checkbox" class="ck" id="ckAll"/></th>
   <th style="width:44px">출처</th>
-  <th style="min-width:130px">Organization - 이름</th>
-  <th style="min-width:80px">담당직원</th>
-  <th style="min-width:65px">담당직함</th>
-  <th style="min-width:70px">대표자명</th>
-  <th style="min-width:100px">Organization - 전화</th>
-  <th style="min-width:140px">People - 이메일</th>
-  <th style="min-width:105px">사업자번호</th>
-  <th style="min-width:90px">업종</th>
-  <th style="min-width:70px">기업형태</th>
-  <th style="min-width:120px">Organization - 웹 주소</th>
-  <th style="min-width:160px">주소</th>
+  <th style="min-width:130px">회사명<span class="sm-col">Organization - 이름</span></th>
+  <th style="min-width:80px">담당직원<span class="sm-col">Organization - 담당직원</span></th>
+  <th style="min-width:65px">담당직함<span class="sm-col">Organization - 담당직함</span></th>
+  <th style="min-width:70px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
+  <th style="min-width:100px">전화(대표)<span class="sm-col">Organization - 전화</span></th>
+  <th style="min-width:140px">이메일<span class="sm-col">People - 이메일</span></th>
+  <th style="min-width:105px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
+  <th style="min-width:90px">업종<span class="sm-col">Organization - 업종</span></th>
+  <th style="min-width:70px">기업형태<span class="sm-col">Organization - 기업형태</span></th>
+  <th style="min-width:120px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
+  <th style="min-width:160px">주소<span class="sm-col">Organization - 주소</span></th>
   <th style="min-width:55px">신뢰도</th>
   <th style="width:52px">상태</th>
   <th style="width:50px"></th>
