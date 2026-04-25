@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.6 — 명함 파서 패턴 강화 (19종 학습)</title>
+<title>OCR Pro v9.7 — URL 대표자 오추출 수정 + 대형 포털 예외 처리</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -191,7 +191,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.6</span>
+  <span class="ver">v9.7</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -1412,9 +1412,15 @@ function extractCompanyInfoFromHTML(html) {
   const result = {};
   let m;
 
-  /* 대표자 */
-  m = html.match(/(?:대표이사|대표자|대표|CEO|Representative)\s*[:\s·|=]?\s*([가-힣]{2,4})/i);
-  if (m) result.대표자 = m[1];
+  /* 대표자 — 구분자 필수, 단순 "대표" 키워드는 오매칭 방지를 위해 제외 */
+  /* ① 완전한 레이블 + 구분자 필수: "대표이사 : 홍길동", "대표자 | 이순신" */
+  m = html.match(/(?:대표이사|대표자)\s*[:\·|\-]\s*([가-힣]{2,4})/)
+    || html.match(/(?:CEO|Representative)\s*[:\·|\-]\s*([가-힣]{2,4})/i)
+    /* ② footer/사업자정보 컨텍스트: "대표 : 홍길동" — 앞뒤에 구분자가 있을 때만 */
+    || html.match(/(?:^|[>\n\r])\s*대표\s*:\s*([가-힣]{2,4})/m)
+    /* ③ 이메일·주소 근처에 나타나는 대표자 패턴 (사업자정보 블록) */
+    || html.match(/사업자\s*(?:등록\s*)?번호[^가-힣]{0,30}대표\s*[:\·]\s*([가-힣]{2,4})/);
+  if (m) result.대표자 = m[m.length - 1]; /* 마지막 캡처 그룹 사용 */
 
   /* 업종 — meta keywords 또는 description */
   m = html.match(/<meta[^>]+name=["']keywords["'][^>]+content=["']([^"']+)["']/i);
@@ -1460,8 +1466,15 @@ JSON 객체 하나만 응답하세요:
 async function callGeminiSingle(company) {
   const url = company.url;
 
+  /* ★ Fix 3: 대형 포털은 홈페이지 HTML 직접 추출 스킵 — 방대한 콘텐츠로 오매칭 발생 */
+  let _skipHtmlExtract = false;
+  try {
+    const _ph = new URL(url?.startsWith("http") ? url : "https://" + (url||"")).hostname;
+    _skipHtmlExtract = /^(?:www\.)?(naver|kakao|google|daum|nate|youtube|facebook|instagram|twitter|tiktok)\.(?:com|co\.kr|net)$/i.test(_ph);
+  } catch {}
+
   // ★ 1차: CORS 프록시로 웹페이지 HTML 가져와서 직접 추출 (Gemini 불필요)
-  if (url) {
+  if (url && !_skipHtmlExtract) {
     try {
       const html = await fetchWebpageHTML(url);
       if (html) {
@@ -1668,7 +1681,8 @@ async function aiSearchAll() {
         if (br && br._matched) {
           // bizno 결과 적용 — 사업자번호 + 대표자 + 전화 + 주소 + 설립일
           if (br.사업자번호 && !rec.사업자번호) rec.사업자번호 = br.사업자번호;
-          if (br.대표자 && !rec.대표자) rec.대표자 = br.대표자;
+          /* ★ Fix 2: bizno 공식 대표자는 HTML 추출 결과를 항상 덮어씀 */
+          if (br.대표자) rec.대표자 = br.대표자;
           if (br.전화번호 && !rec.전화) rec.전화 = br.전화번호;
           if (br.도로명주소 && !rec.주소) rec.주소 = br.도로명주소;
           if (br.설립일) rec.설립일 = br.설립일;
@@ -1710,8 +1724,16 @@ async function aiSearchAll() {
           let retryResult = null;
           const domainCandidates = [];
 
+          /* ★ Fix 3: 대형 포털은 홈페이지 콘텐츠가 방대해 HTML 직접 추출 신뢰 불가 */
+          const BIG_PORTAL_RE = /^(?:www\.)?(naver|kakao|google|daum|nate|youtube|facebook|instagram|twitter|tiktok)\.(?:com|co\.kr|net)$/i;
+          let isBigPortal = false;
+          try {
+            const _ph = new URL(rec.웹주소?.startsWith("http") ? rec.웹주소 : "https://" + (rec.웹주소||"")).hostname;
+            isBigPortal = BIG_PORTAL_RE.test(_ph);
+          } catch {}
+
           // ── Step 0: 웹사이트 CORS fetch → 회사명 보정 + 직접 추출 → Bizno 재시도 ──
-          if (!retryResult && rec.웹주소) {
+          if (!retryResult && rec.웹주소 && !isBigPortal) {
             setAiStep(logItem, "search2");
             resultSpan.textContent = `🔗 웹사이트에서 회사명 확인 중...`;
             try {
@@ -1867,7 +1889,8 @@ ${rec.웹주소 ? `URL: ${rec.웹주소}` : ""}
           if (retryResult) {
             // 영문 도메인 재시도 성공 — 결과 적용
             if (retryResult.사업자번호 && !rec.사업자번호) rec.사업자번호 = retryResult.사업자번호;
-            if (retryResult.대표자 && !rec.대표자) rec.대표자 = retryResult.대표자;
+            /* ★ Fix 2: bizno/국세청은 공식 등록 정보 — HTML 직접추출 결과를 항상 덮어씀 */
+            if (retryResult.대표자) rec.대표자 = retryResult.대표자;
             if (retryResult.전화번호 && !rec.전화) rec.전화 = retryResult.전화번호;
             if (retryResult.도로명주소 && !rec.주소) rec.주소 = retryResult.도로명주소;
             if (retryResult.설립일) rec.설립일 = retryResult.설립일;
@@ -5607,6 +5630,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.7",
+    date: "2026-04-25",
+    title: "URL 대표자 오추출 수정",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "대표자 정규식 강화 — '대표' 단독 키워드 제거, 구분자(:·|) 필수화로 오매칭 방지" },
+      { type: "fix",     text: "bizno/국세청 대표자 우선순위 보장 — HTML 직접추출 결과를 bizno 공식 정보가 항상 덮어씀" },
+      { type: "fix",     text: "대형 포털(naver·kakao·google 등) HTML 직접 추출 스킵 — 수백KB 콘텐츠에서 오매칭 차단" },
+    ],
+    learnLog: [
+      { text: "naver.com 대표자 '스코어데' 오추출: HTML의 뉴스/스포츠 콘텐츠에서 '대표 스코어데...' 패턴이 먼저 매칭 → 구분자 필수화로 수정" },
+      { text: "오염 경로: extractCompanyInfoFromHTML → HTML이 rec.대표자 선점 → bizno가 나중에 맞는 값 가져와도 !rec.대표자 조건에 의해 덮어쓰기 차단 → 수정: bizno 결과는 조건 없이 덮어씀" },
+    ]
+  },
   {
     version: "v9.6",
     date: "2026-04-25",
