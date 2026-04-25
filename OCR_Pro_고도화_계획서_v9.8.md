@@ -1,7 +1,7 @@
 # OCR Pro 전시회 엔진 고도화 계획서
 
 **작성일:** 2026-04-25  
-**현재 버전:** v9.8  
+**현재 버전:** v9.10  
 **기준 학습:** Franchise COEX 추출 파이프라인 보고서 (52개 기업, 2026-04-25)
 
 ---
@@ -203,6 +203,8 @@ function loadExpoStructureCache(url) {
 
 ### Phase 1: 즉시 (현 세션)
 - [x] v9.8 BBS 파서 구현 완료
+- [x] v9.9 병렬 상세 조회 + 프리셋 라이브러리 + 영문명 컬럼
+- [x] v9.10 BBS maxPage 정확 감지 (detectBbsMaxPage — 페이지네이션/상세링크 구분)
 - [ ] **git push** (Mac에서 git-push.command 더블클릭)
 
 ### Phase 2: 단기 (다음 1~2 세션)
