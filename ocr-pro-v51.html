@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.7 — URL 대표자 오추출 수정 + 대형 포털 예외 처리</title>
+<title>OCR Pro v9.9 — BBS 병렬 상세 조회 + 프리셋 라이브러리 + 영문명 컬럼</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -191,7 +191,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.7</span>
+  <span class="ver">v9.9</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -494,6 +494,7 @@ if(location.protocol==="file:"){
   <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bdr)">
     <div style="font-size:11px;font-weight:700;color:var(--sub);margin-bottom:6px">⚡ 주요 전시회 빠른 선택</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
+      <button class="expo-preset btn-xs" data-url="https://www.franchisecoex.co.kr/visit/join_list.php">🍽 프랜차이즈 COEX</button>
       <button class="expo-preset btn-xs" data-url="https://simtos.org/kor/exhibitors/exhibitor_list.do">🏭 SIMTOS 2026</button>
       <button class="expo-preset btn-xs" data-url="https://kimes.kr/ko/visitor/exhibitor-search">🏥 KIMES</button>
       <button class="expo-preset btn-xs" data-url="https://cdn.ems.coex.co.kr/event/1009/@20261009/cms/AW%202026%20%EC%B0%B8%EA%B0%80%EC%97%85%EC%B2%B4%20%EB%A6%AC%EC%8A%A4%ED%8A%B8[%EA%B5%AD%EB%AC%B8].pdf">📄 COEX AW 2026 (PDF)</button>
@@ -501,7 +502,7 @@ if(location.protocol==="file:"){
       <button class="expo-preset btn-xs" data-url="">✏️ 직접 입력</button>
     </div>
     <div style="font-size:11px;color:var(--mut);margin-top:8px;line-height:1.7">
-      💡 <strong>URL 포맷 자동 감지:</strong> .pdf → PDF파싱 | 이미지 → Vision AI | 동적페이지 → API탐색 → AI분석<br>
+      💡 <strong>URL 포맷 자동 감지:</strong> .pdf → PDF파싱 | 이미지 → Vision AI | 게시판형(bbs/ptype=view) → 직접파싱 | 기타 → API탐색 → AI분석<br>
       💡 <strong>CORS 오류 시:</strong> ⚙️ 설정에서 Cloudflare Worker URL 입력<br>
       💡 <strong>이미지/PDF 업체표:</strong> 📂 파일 업로드 탭에서 직접 올리면 Gemini Vision이 추출
     </div>
@@ -2208,7 +2209,7 @@ function showThumb(recId) {
   document.body.appendChild(overlay);
 }
 
-function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",부스번호:"",_dupOf:null,_biznoVerified:null,_biznoAlt:""}}
+function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",영문명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",부스번호:"",_dupOf:null,_biznoVerified:null,_biznoAlt:""}}
 
 /* ═══════════════════════════════════════════════════
    🔍 P3-1: 중복 감지 — 회사명 또는 사업자번호 기준
@@ -4354,6 +4355,7 @@ function exportExcel(){
     // ── 고정 컬럼 순서 (SalesMap 샘플 기준 + People-이메일) ──
     return {
       "Organization - 이름":         r.회사명||"",
+      "Organization - 영문명":       r.영문명||"",
       "Organization - 사업자번호":   r.사업자번호||"",
       "Organization - 대표자명":     대표자명,
       "Organization - 담당직원":     담당직원,
@@ -5155,6 +5157,39 @@ function normalizeAPICompanies(arr) {
   }).filter(Boolean);
 }
 
+/* ══════════════════════════════════════════════════════
+   🗂 전시회 사이트 프리셋 라이브러리
+   ══════════════════════════════════════════════════════ */
+const EXPO_SITE_PRESETS = {
+  'franchisecoex.co.kr': {
+    name: '프랜차이즈 COEX', type: 'bbs',
+    listUrl: 'https://www.franchisecoex.co.kr/visit/join_list.php',
+    pageParam: 'page',
+    detailFields: ['부스번호', '브랜드명', '품목', '홈페이지 주소', '회차'],
+  },
+  'simtos.org':  { name: 'SIMTOS', type: 'html_table', pageParam: 'pageIndex' },
+  'kimes.kr':    { name: 'KIMES',  type: 'json_api',   pageParam: 'page' },
+  'ikfa.or.kr':  { name: '한국프랜차이즈산업협회', type: 'bbs', pageParam: 'page' },
+};
+
+function getExpoPreset(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return EXPO_SITE_PRESETS[host] || null;
+  } catch(e) { return null; }
+}
+
+/* BBS 사이트 페이지 URL 생성 — HTML에서 실제 패턴 추출 */
+function getBbsPageUrl(html, baseUrl, pg) {
+  // href에서 page=숫자 패턴 (+ 추가 파라미터 포함) 추출
+  const m = html.match(/href=['"]([^'"#]*[?&]page=\d+[^'"]*)['"]/i);
+  if (!m) return null;
+  try {
+    const abs = new URL(m[1], baseUrl).href;
+    return abs.replace(/([?&]page=)\d+/i, `$1${pg}`);
+  } catch(e) { return null; }
+}
+
 /* 페이지네이션 파라미터 자동 감지 */
 function detectPageParam(url) {
   const known = ['GotoPage','pageIndex','pageNo','page','p','pg','currentPage','curPage','start'];
@@ -5176,8 +5211,131 @@ function detectMaxPage(html, pageParam) {
   return max;
 }
 
+/* ══════════════════════════════════════════════════════
+   🏛 BBS(게시판형) 전시회 사이트 파서
+   franchisecoex.co.kr 등 ptype=view / td.subject / bbs_view 구조
+   ══════════════════════════════════════════════════════ */
+
+/* BBS 구조 감지 */
+function isBbsPage(html) {
+  return /td[^>]*class=["'][^"']*subject[^"']*["']/i.test(html)
+      || /ptype=view/i.test(html)
+      || /table[^>]*class=["'][^"']*bbs_view[^"']*["']/i.test(html);
+}
+
+/* BBS 목록 페이지 파서: td.subject + ptype=view 링크 기반 */
+function parseBbsListPage(html, baseUrl, pageNum) {
+  const companies = [];
+  const rowRe = /<tr[\s>]([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRe.exec(html)) !== null) {
+    const row = rowMatch[1];
+    // td.subject 또는 td class에 subject 포함
+    const subjM = row.match(/<td[^>]*class=["'][^"']*subject[^"']*["'][^>]*>([\s\S]*?)<\/td>/i);
+    if (!subjM) continue;
+    const cell = subjM[1];
+    // ptype=view 상세 링크
+    const linkM = cell.match(/href=['"]([^'"]*ptype=view[^'"]*)['"]/i);
+    if (!linkM) continue;
+    let detailUrl;
+    try { detailUrl = new URL(linkM[1], baseUrl).href; }
+    catch(e) { detailUrl = baseUrl.replace(/\/[^/]*$/, '') + '/' + linkM[1].replace(/^\//, ''); }
+    // 기업명: <strong> 태그 내 텍스트 우선, 없으면 <a> 텍스트
+    const strongM = cell.match(/<strong[^>]*>([\s\S]*?)<\/strong>/i);
+    const anchorM = cell.match(/<a[^>]*>([\s\S]*?)<\/a>/i);
+    let rawName = ((strongM || anchorM) || ['',''])[1];
+    rawName = rawName.replace(/<[^>]+>/g, '').replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+    if (!rawName || rawName.length < 1) continue;
+    // 카테고리 [...]
+    const fullText = cell.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const catM = fullText.match(/\[([^\]]+)\]/);
+    // 영문명 (대문자 괄호)
+    const enM = fullText.match(/\(\s*([A-Z][A-Z0-9 &'.,\-]+)\s*\)/);
+    // 번호
+    const numM = row.match(/<td[^>]*class=["'][^"']*num[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)
+              || row.match(/<td[^>]*>([\s\S]*?)<\/td>/);
+    const num = numM ? numM[1].replace(/<[^>]+>/g, '').trim() : '';
+    companies.push({
+      번호: num, 회사명: rawName,
+      영문명: enM ? enM[1].trim() : '',
+      카테고리: catM ? catM[1] : '',
+      부스번호: '', 전시품: '', 웹주소: '',
+      담당자: '', 전화: '', 이메일: '', 주소: '', 대표자: '',
+      _detailUrl: detailUrl, _pageNum: pageNum || 1,
+    });
+  }
+  return companies;
+}
+
+/* BBS th+td 필드 추출 (table.bbs_view 구조) */
+function extractBbsField(html, label) {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('<th[^>]*>\\s*' + esc + '\\s*<\\/th>\\s*<td(?:\\s+colspan=["\']\\d+["\'])?[^>]*>([\\s\\S]*?)<\\/td>', 'i');
+  const m = html.match(re);
+  if (!m) return '';
+  let v = m[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ')
+    .replace(/\s+/g,' ').trim();
+  return v === '-' ? '' : v;
+}
+
+/* 홈페이지 URL 정규화 (bbs형 "http://<a href=...>텍스트</a>" 처리) */
+function normalizeHomepageHtml(raw) {
+  if (!raw) return '';
+  const aM = raw.match(/<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+  if (aM) {
+    const href = aM[1].trim();
+    let text = aM[2].replace(/<[^>]+>/g,'').trim();
+    if (!text) text = href;
+    if (!/^https?:\/\//i.test(text) && text.includes('.')) {
+      const sm = href.match(/^(https?:\/\/)/i);
+      text = (sm ? sm[1] : 'http://') + text;
+    }
+    return text.replace(/\/+$/, '');
+  }
+  const plain = raw.replace(/<[^>]+>/g,'').replace(/\s+/g,'').trim();
+  if (!plain || plain === '-') return '';
+  return /^https?:\/\//i.test(plain) ? plain : (plain.includes('.') ? 'http://' + plain : '');
+}
+
+/* BBS 상세 페이지 파서 (table.bbs_view 내 th+td) */
+function parseBbsDetailPage(html, fallback) {
+  const r = Object.assign({}, fallback);
+  if (!/bbs_view/i.test(html)) return r;
+  const booth = extractBbsField(html, '부스번호');
+  const brand = extractBbsField(html, '브랜드명');
+  const item  = extractBbsField(html, '품목');
+  const hpRaw = extractBbsField(html, '홈페이지 주소') || extractBbsField(html, '홈페이지');
+  const round = extractBbsField(html, '회차').replace(/회$/, '');
+  const hp    = normalizeHomepageHtml(hpRaw) || hpRaw.replace(/<[^>]+>/g,'').trim();
+  if (booth)  r.부스번호 = booth;
+  if (brand)  r.전시품   = brand + (item ? ' — ' + item : '');
+  if (item && !brand) r.전시품 = item;
+  if (hp)     r.웹주소   = hp;
+  if (round)  r.회차     = round;
+  // 상세 div.subject에서 카테고리/영문명 보강
+  const subjM = html.match(/<(?:div|h\d)[^>]*class=["'][^"']*subject[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|h\d)>/i);
+  if (subjM) {
+    const t = subjM[1].replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+    const catM = t.match(/\[([^\]]+)\]/);
+    if (catM && !r.카테고리) r.카테고리 = catM[1];
+    const enM = t.match(/\(\s*([A-Z][A-Z0-9 &'.,\-]+)\s*\)/);
+    if (enM && !r.영문명) r.영문명 = enM[1].trim();
+  }
+  return r;
+}
+
 /* HTML 테이블에서 업체 목록 추출 (범용) */
 function parseExhibitorTable(html, baseUrl) {
+  // ── BBS(게시판)형 구조 우선 감지 (franchisecoex 등 ptype=view 사이트) ──
+  if (isBbsPage(html)) {
+    const bbsResult = parseBbsListPage(html, baseUrl, 1);
+    if (bbsResult.length > 0) {
+      console.log(`[BBS파서] ${bbsResult.length}개 기업 감지`);
+      return bbsResult;
+    }
+  }
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const companies = [];
@@ -5274,18 +5432,37 @@ async function detectExpoStructure() {
     const html = await fetchWebpageHTML(url);
     if (!html) throw new Error('페이지를 가져올 수 없습니다. Worker URL 설정을 확인하세요.');
 
-    const pageParam = detectPageParam(url);
+    const preset    = getExpoPreset(url);
+    const isBbs     = isBbsPage(html);
+    const pageParam = isBbs ? 'page' : (preset?.pageParam || detectPageParam(url));
     const maxPage   = detectMaxPage(html, pageParam);
     const companies = parseExhibitorTable(html, url);
     const hasDetail = companies.some(c => c._detailUrl);
+    const sample    = companies.slice(0, 3).map(c => c.회사명).join(', ') || '없음';
+    const cats      = [...new Set(companies.map(c => c.카테고리).filter(Boolean))].slice(0, 4).join(' / ');
 
-    resultEl.innerHTML = `
-      ✅ 구조 분석 완료<br>
-      📄 <strong>페이지 파라미터:</strong> <code>${pageParam}</code> — 감지된 최대 ${maxPage}페이지<br>
-      🏢 <strong>1페이지 업체 수:</strong> ${companies.length}개 (전체 약 ${companies.length * maxPage}개 예상)<br>
-      🔗 <strong>상세페이지:</strong> ${hasDetail ? '✅ 있음 (대표자·전화·이메일 추출 가능)' : '❌ 없음 (목록 정보만 수집)'}<br>
-      <span style="color:var(--sub);font-size:11px">샘플: ${companies.slice(0,3).map(c=>c.회사명).join(', ')}</span>
-    `;
+    if (isBbs) {
+      const preset2 = preset || { name: '게시판형 사이트', detailFields: ['부스번호','홈페이지'] };
+      resultEl.innerHTML = `
+        ✅ <strong>BBS 게시판형 구조 감지!</strong><br>
+        🏛 <strong>사이트:</strong> ${esc(preset2.name || url)}<br>
+        📄 <strong>페이지:</strong> 총 <strong>${maxPage}</strong>페이지 (1페이지 ${companies.length}개 → 전체 약 <strong>${companies.length * maxPage}개</strong> 예상)<br>
+        🔗 <strong>상세 페이지:</strong> ${hasDetail ? '✅ table.bbs_view 구조 감지 — 부스번호·홈페이지·품목 추출 가능' : '❌ 상세 링크 없음'}<br>
+        🗂 <strong>추출 가능 필드:</strong> ${(preset2.detailFields || []).join(', ')}<br>
+        ${cats ? `🏷 <strong>카테고리 샘플:</strong> ${esc(cats)}<br>` : ''}
+        <span style="color:var(--sub);font-size:11px">샘플 기업: ${esc(sample)}</span>
+      `;
+    } else {
+      resultEl.innerHTML = `
+        ✅ 구조 분석 완료 ${preset ? `(${esc(preset.name)})` : ''}<br>
+        📄 <strong>페이지 파라미터:</strong> <code>${pageParam}</code> — 감지된 최대 ${maxPage}페이지<br>
+        🏢 <strong>1페이지 업체 수:</strong> ${companies.length}개 (전체 약 ${companies.length * maxPage}개 예상)<br>
+        🔗 <strong>상세페이지:</strong> ${hasDetail ? '✅ 있음 (대표자·전화·이메일 추출 가능)' : '❌ 없음 (목록 정보만 수집)'}<br>
+        <span style="color:var(--sub);font-size:11px">샘플: ${esc(sample)}</span>
+      `;
+    }
+    resultEl.style.background = '';
+    resultEl.style.borderColor = '';
     resultEl.style.display = 'block';
   } catch(e) {
     resultEl.innerHTML = `❌ 오류: ${esc(e.message)}`;
@@ -5297,8 +5474,34 @@ async function detectExpoStructure() {
   }
 }
 
+/* BBS 전용 병렬 상세 페이지 사전 조회 (배치 6개 동시 요청) */
+async function prefetchBbsDetails(companies, batchSize, delayMs) {
+  const htmls = new Array(companies.length).fill(null);
+  const totalBatches = Math.ceil(companies.length / batchSize);
+  for (let i = 0; i < companies.length; i += batchSize) {
+    if (expoAborted) break;
+    const batch = companies.slice(i, i + batchSize);
+    const batchNo = Math.floor(i / batchSize) + 1;
+    updateExpoProgress(
+      `📦 상세페이지 사전 조회 중... 배치 ${batchNo}/${totalBatches} (${i}~${Math.min(i + batchSize, companies.length)}번)`,
+      i, companies.length
+    );
+    const results = await Promise.all(
+      batch.map(comp => comp._detailUrl
+        ? fetchWebpageHTML(comp._detailUrl).catch(e => {
+            console.warn('[prefetch 실패]', comp.회사명, e.message); return null;
+          })
+        : Promise.resolve(null)
+      )
+    );
+    results.forEach((h, j) => { htmls[i + j] = h; });
+    if (i + batchSize < companies.length) await sleep(delayMs);
+  }
+  return htmls;
+}
+
 /* 공통 레코드 등록 헬퍼 */
-async function registerCompanies(allCompanies, includeDetail, delayMs) {
+async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtmls = null) {
   let totalAdded = 0;
   for (let i = 0; i < allCompanies.length; i++) {
     if (expoAborted) break;
@@ -5311,8 +5514,9 @@ async function registerCompanies(allCompanies, includeDetail, delayMs) {
 
     const rec = emptyRec('전시회');
     rec.회사명   = comp.회사명   || '';
+    rec.영문명   = comp.영문명   || '';
     rec.부스번호 = comp.부스번호 || '';
-    rec.업종     = comp.전시품   || comp.업종 || '';
+    rec.업종     = comp.전시품   || comp.카테고리 || comp.업종 || '';
     rec.웹주소   = comp.웹주소   || '';
     rec.담당자   = comp.담당자   || '';
     rec.전화     = comp.전화     || '';
@@ -5323,19 +5527,34 @@ async function registerCompanies(allCompanies, includeDetail, delayMs) {
 
     if (includeDetail && comp._detailUrl) {
       try {
-        const detailHtml = await fetchWebpageHTML(comp._detailUrl);
+        // 사전 조회 캐시 우선 사용, 없으면 순차 fetch
+        const detailHtml = (detailHtmls && detailHtmls[i] !== undefined)
+          ? detailHtmls[i]
+          : await fetchWebpageHTML(comp._detailUrl);
         if (detailHtml) {
-          const d = parseExhibitorDetail(detailHtml);
-          if (d.대표자)  rec.대표자  = d.대표자;
-          if (d.주소)    rec.주소    = d.주소;
-          if (d.전화)    rec.전화    = d.전화;
-          if (d.이메일)  rec.이메일  = d.이메일;
-          if (d.웹주소 && !rec.웹주소) rec.웹주소 = d.웹주소;
-          if (d.설립일)  rec.설립일  = d.설립일;
-          if (d.업종 && !rec.업종) rec.업종 = d.업종;
-          if (d.직원수)  rec.직원수  = d.직원수;
+          // ── BBS 상세 구조 우선 처리 (table.bbs_view) ──
+          if (isBbsPage(detailHtml)) {
+            const bd = parseBbsDetailPage(detailHtml, comp);
+            if (bd.부스번호)  rec.부스번호  = bd.부스번호;
+            if (bd.웹주소)    rec.웹주소    = bd.웹주소;
+            if (bd.전시품)    rec.업종      = bd.전시품;
+            if (bd.카테고리 && !rec.업종) rec.업종 = bd.카테고리;
+            if (bd.영문명 && !rec.영문명) rec.영문명 = bd.영문명;
+          } else {
+            // ── 일반 상세 파서 ──
+            const d = parseExhibitorDetail(detailHtml);
+            if (d.대표자)  rec.대표자  = d.대표자;
+            if (d.주소)    rec.주소    = d.주소;
+            if (d.전화)    rec.전화    = d.전화;
+            if (d.이메일)  rec.이메일  = d.이메일;
+            if (d.웹주소 && !rec.웹주소) rec.웹주소 = d.웹주소;
+            if (d.설립일)  rec.설립일  = d.설립일;
+            if (d.업종 && !rec.업종) rec.업종 = d.업종;
+            if (d.직원수)  rec.직원수  = d.직원수;
+          }
         }
-        await sleep(delayMs);
+        // 캐시 없는 경우만 딜레이 (캐시 있으면 이미 병렬 완료)
+        if (!detailHtmls) await sleep(delayMs);
       } catch(e) {
         console.warn('[상세정보 실패]', comp.회사명, e.message);
       }
@@ -5423,12 +5642,15 @@ async function fetchAllExhibitors() {
       return;
     }
 
-    updateFormatBadge('html');
-    const pageParam = detectPageParam(url);
+    // ── BBS 구조 감지 — 페이지 파라미터를 'page'로 고정 ──
+    const isBbs = isBbsPage(firstHtml);
+    updateFormatBadge(isBbs ? 'html' : 'html');
+    if (isBbs) toast('🏛 게시판형(BBS) 구조 감지 — 직접 파서 적용', 'info');
+    const pageParam  = isBbs ? 'page' : (getExpoPreset(url)?.pageParam || detectPageParam(url));
     const detectedMax = detectMaxPage(firstHtml, pageParam);
     const maxPage   = Math.min(detectedMax, maxPagesLimit);
 
-    console.log(`[전시회] 감지: pageParam="${pageParam}", maxPage=${maxPage}`);
+    console.log(`[전시회] BBS=${isBbs}, pageParam="${pageParam}", maxPage=${maxPage}`);
     updateExpoProgress(`📋 총 ${maxPage}페이지 감지 완료`, 0, maxPage);
 
     // ── 2단계: 모든 페이지 순회해서 업체 목록 수집 ──
@@ -5440,11 +5662,15 @@ async function fetchAllExhibitors() {
       let pageHtml = firstHtml;
       if (pg > 1) {
         let pageUrl;
-        const re = new RegExp('([?&])' + pageParam + '=\\d+');
-        if (re.test(url)) {
-          pageUrl = url.replace(re, `$1${pageParam}=${pg}`);
+        if (isBbs) {
+          // BBS: HTML 내 실제 페이지네이션 링크 패턴 사용 (&code= 등 suffix 자동 보존)
+          pageUrl = getBbsPageUrl(firstHtml, url, pg)
+                 || url + (url.includes('?') ? '&' : '?') + `page=${pg}`;
         } else {
-          pageUrl = url + (url.includes('?') ? '&' : '?') + `${pageParam}=${pg}`;
+          const re = new RegExp('([?&])' + pageParam + '=\\d+');
+          pageUrl = re.test(url)
+            ? url.replace(re, `$1${pageParam}=${pg}`)
+            : url + (url.includes('?') ? '&' : '?') + `${pageParam}=${pg}`;
         }
         updateExpoProgress(`📋 페이지 ${pg}/${maxPage} 가져오는 중...`, pg - 1, maxPage);
         pageHtml = await fetchWebpageHTML(pageUrl);
@@ -5454,7 +5680,7 @@ async function fetchAllExhibitors() {
       if (!pageHtml) { console.warn(`[전시회] 페이지 ${pg} 실패`); continue; }
 
       const companies = parseExhibitorTable(pageHtml, url);
-      allCompanies.push(...companies);
+      allCompanies.push(...companies.map(c => Object.assign(c, { _pageNum: pg })));
       updateExpoProgress(`✅ 페이지 ${pg}/${maxPage} — 누적 ${allCompanies.length}개`, pg, maxPage);
     }
 
@@ -5474,10 +5700,17 @@ async function fetchAllExhibitors() {
       toast(`🤖 Gemini AI: ${geminiCompanies.length}개 업체 추출 완료`, 'success');
     }
 
-    toast(`📋 ${allCompanies.length}개 업체 목록 수집 완료. ${includeDetail ? '상세정보 조회 중...' : '등록 중...'}`, 'success');
+    toast(`📋 ${allCompanies.length}개 업체 목록 수집 완료. ${includeDetail ? '상세정보 병렬 조회 중...' : '등록 중...'}`, 'success');
 
-    // ── 3단계: 레코드 생성 (공통 헬퍼) ──
-    totalAdded = await registerCompanies(allCompanies, includeDetail, delayMs);
+    // ── 3단계: BBS 시 상세 페이지 병렬 사전 조회 ──
+    let detailHtmlCache = null;
+    if (isBbs && includeDetail && allCompanies.some(c => c._detailUrl)) {
+      updateExpoProgress(`📦 ${allCompanies.length}개 상세페이지 병렬 조회 중... (배치 6개)`, 0, allCompanies.length);
+      detailHtmlCache = await prefetchBbsDetails(allCompanies, 6, Math.max(50, delayMs / 4));
+    }
+
+    // ── 4단계: 레코드 생성 ──
+    totalAdded = await registerCompanies(allCompanies, includeDetail, delayMs, detailHtmlCache);
     updateExpoProgress(`🎉 완료! ${totalAdded}개 업체 등록`, totalAdded, totalAdded);
     toast(`🏛 ${totalAdded}개 참가업체 등록 완료! 세일즈맵 엑셀로 다운로드하세요.`, 'success');
 
@@ -5643,6 +5876,42 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.9",
+    date: "2026-04-25",
+    title: "BBS 병렬 조회 + 프리셋 라이브러리 + 영문명 컬럼",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "prefetchBbsDetails() — BBS 사이트 상세 페이지 6개 병렬 사전 조회 (mapLimit 방식). 52개 기업 처리 약 80% 속도 향상" },
+      { type: "feat",    text: "EXPO_SITE_PRESETS — 주요 전시회 사이트 파싱 설정 라이브러리 (franchisecoex·SIMTOS·KIMES·IKFA)" },
+      { type: "feat",    text: "getBbsPageUrl() — BBS HTML에서 실제 페이지네이션 URL 추출 (&code=join_list 등 suffix 자동 보존)" },
+      { type: "fix",     text: "BBS 사이트 pageParam 자동 수정: isBbsPage() 감지 시 pageParam='page' 강제 → 기존 GotoPage 오감지 해결" },
+      { type: "improve", text: "detectExpoStructure() 분석 결과 고도화 — BBS 감지 시 bbs_view 필드·카테고리·예상 기업 수 상세 표시" },
+      { type: "feat",    text: "영문명 필드 추가 — emptyRec·registerCompanies·exportExcel에 Organization - 영문명 컬럼 연동" },
+    ],
+    learnLog: [
+      { text: "franchisecoex URL은 base URL에 page 파라미터 없음 → detectPageParam('page') 오작동 → isBbsPage 감지 후 강제 'page' 적용으로 수정" },
+      { text: "BBS 페이지네이션은 &code=join_list 등 suffix 보유 → getBbsPageUrl이 HTML에서 실제 링크 추출하여 suffix 자동 보존" },
+    ]
+  },
+  {
+    version: "v9.8",
+    date: "2026-04-25",
+    title: "BBS(게시판형) 전시회 파서 추가",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "isBbsPage() — ptype=view / td.subject / bbs_view 구조 자동 감지" },
+      { type: "feat",    text: "parseBbsListPage() — 한국 게시판형 목록 페이지 파서 (td.subject + 카테고리 + 영문명 추출)" },
+      { type: "feat",    text: "parseBbsDetailPage() + extractBbsField() — table.bbs_view th+td 구조에서 부스번호·품목·홈페이지·회차 추출" },
+      { type: "feat",    text: "normalizeHomepageHtml() — 'http://<a href=...>' 비정형 URL 정규화 (franchisecoex 실사례 기반)" },
+      { type: "improve", text: "registerCompanies() — BBS 상세 페이지 감지 시 parseBbsDetailPage 우선 적용, 일반 사이트는 기존 파서 유지" },
+      { type: "improve", text: "프리셋에 🍽 프랜차이즈 COEX (franchisecoex.co.kr) 추가" },
+    ],
+    learnLog: [
+      { text: "Codex 추출 보고서 학습: 목록(td.subject+ptype=view) → 상세(table.bbs_view th+td) 2단계 파이프라인을 OCR Pro 엔진에 이식" },
+      { text: "normalizeHomepageHtml: 'http://<a href=\"http://site.com//\">site.com/</a>' 형태의 href-in-text URL을 'http://site.com/'으로 정규화" },
+    ]
+  },
   {
     version: "v9.7",
     date: "2026-04-25",
