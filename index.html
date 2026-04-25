@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.4 — 업체리스트 다포맷 처리 + 전시구역 섹션 태깅</title>
+<title>OCR Pro v9.5 — 업데이트 이력 메뉴 + 다포맷 업체리스트</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -153,6 +153,25 @@ td[contenteditable]:hover{background:var(--card2)}
 .cfg-status{font-size:11px;margin-top:4px;font-weight:600}
 .cfg-status.ok{color:var(--grn)}.cfg-status.warn{color:var(--org)}.cfg-status.err{color:var(--red)}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--bdr)}
+/* ── 업데이트 이력 모달 ── */
+.cl-timeline{padding:4px 0 0 0}
+.cl-ver-block{position:relative;padding:0 0 24px 20px;border-left:2px solid var(--bdr2)}
+.cl-ver-block:last-child{border-left-color:transparent;padding-bottom:0}
+.cl-ver-dot{position:absolute;left:-7px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--pri);border:2px solid var(--card);box-shadow:0 0 0 2px var(--pri)}
+.cl-ver-dot.fix{background:var(--red,#ef4444)}
+.cl-ver-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.cl-ver-title{font-size:13px;font-weight:700;color:var(--txt)}
+.cl-ver-date{margin-left:auto;font-size:11px;color:var(--sub);white-space:nowrap}
+.cl-items{display:flex;flex-direction:column;gap:5px}
+.cl-item{display:flex;gap:7px;align-items:flex-start;font-size:12.5px;line-height:1.55;color:var(--txt)}
+.cl-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;margin-top:1px}
+.cl-badge.feat{background:#dcfce7;color:#16a34a}
+.cl-badge.fix{background:#fef2f2;color:#ef4444}
+.cl-badge.improve{background:#eff6ff;color:#2563eb}
+.cl-badge.learn{background:#faf5ff;color:#7c3aed}
+.cl-badge.ui{background:#fff7ed;color:#c2410c}
+.cl-section-sep{font-size:10px;font-weight:700;color:var(--sub);letter-spacing:.05em;text-transform:uppercase;margin:10px 0 6px;display:flex;align-items:center;gap:6px}
+.cl-section-sep::after{content:"";flex:1;height:1px;background:var(--bdr)}
 /* ── API 미설정 경고 배너 ── */
 .api-warn-banner{background:#fffbeb;border:1.5px solid var(--org);border-radius:10px;padding:11px 16px;margin-bottom:12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;cursor:pointer}
 .api-warn-banner:hover{background:#fef3c7}
@@ -172,8 +191,9 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.4</span>
+  <span class="ver">v9.5</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
+  <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
 </div>
 
@@ -293,6 +313,18 @@ if(location.protocol==="file:"){
     <div class="modal-actions">
       <button class="btn btn-out" onclick="closeSettings()">취소</button>
       <button class="btn btn-pri" onclick="saveSettings()">💾 저장 및 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- 📋 업데이트 이력 모달 -->
+<div id="changelogModal" class="modal-overlay hidden" onclick="if(event.target===this)closeChangelog()">
+  <div class="modal-box" style="width:620px;max-height:88vh">
+    <div class="modal-title">📋 업데이트 이력</div>
+    <div class="modal-subtitle">버전별 기능 변경 내용 및 OCR 엔진 학습 교정 이력</div>
+    <div id="changelogBody" class="cl-timeline"></div>
+    <div class="modal-actions">
+      <button class="btn btn-pri" onclick="closeChangelog()">닫기</button>
     </div>
   </div>
 </div>
@@ -5527,6 +5559,140 @@ function setExpoFile(file) {
 }
 
 /* ═══════════════════════════════════════════════════
+   📋 업데이트 이력 모달
+   ═══════════════════════════════════════════════════ */
+const CHANGELOG = [
+  {
+    version: "v9.5",
+    date: "2026-04-25",
+    title: "업데이트 이력 메뉴",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "📋 업데이트 이력 모달 추가 — 버전별 기능 변경 내용 및 OCR 엔진 학습 교정 이력 열람" },
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.4",
+    date: "2026-04-25",
+    title: "업체리스트 다포맷 처리 강화",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "문서탭 PDF → 구조화 업체리스트 자동 감지 (AW 2026: 453개 배치 추출)" },
+      { type: "feat",    text: "detectExhibitionMeta() — 파일명·PDF 텍스트에서 전시회명·연도·섹션 자동 태깅" },
+      { type: "feat",    text: "parsePlainCompanyList() — 부스번호 없는 줄당 1개 업체명 텍스트 리스트 일괄 import" },
+      { type: "improve", text: "parseStructuredExhibitorList() 섹션 헤더 감지 (aimex / Korea Vision Show / Smart Factory Expo 등) → 부스번호 필드에 'AW 2026 A432 (aimex)' 형태로 통합" },
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.3",
+    date: "2026-04-24",
+    title: "OCR 파서 오류 교정 + UI 컬럼 정리",
+    dot: "fix",
+    items: [
+      { type: "ui",      text: "테이블 컬럼 재정렬 — 회사명→사업자번호→대표자명→담당직원→전화(010)→이메일→웹주소 (업종·기업형태·주소 제거)" },
+      { type: "ui",      text: "헤더 2줄 표시 — 한글 칼럼명 + SalesMap 영문 필드명 (sm-col 클래스)" },
+      { type: "ui",      text: "피플 이름 → 담당직원으로 rename" },
+      { type: "improve", text: "신뢰도(calcReliability) 계산 로직 신규 추가 — 사업자번호·전화·이메일 유무 기반 높음/보통/낮음" },
+    ],
+    learnLog: [
+      { text: "경영총괄·영업총괄 → 담당자 오분류 수정: ROLE_LABEL_RE 패턴 추가 (step 10-b) + pushRecord() 선처리" },
+      { text: "복합토큰 '김근수 전무' → _text 버려짐 수정: compMatch 선처리 (parts 루프 앞에서 이름+직함 분리)" },
+      { text: "Gemini API 차단 환경 확인 → Vision v3 정규식 파서가 실제 동작 경로임을 파악, 정규식 강화로 방향 전환" },
+      { text: "AI 결과 처리 블록에 직능 라벨 제거 + OCR 이름+직함 폴백 추가 (Gemini 차단 환경 대응)" },
+    ]
+  },
+  {
+    version: "v9.2",
+    date: "2026-04-20",
+    title: "다중 포맷 지원 + 세일즈맵 API 연동",
+    dot: "feat",
+    items: [
+      { type: "feat",    text: "다중 포맷 지원 — PDF(텍스트 추출), Excel/CSV(SheetJS), 이미지(Gemini Vision), URL 포맷 자동 감지" },
+      { type: "feat",    text: "전시회 탭 파일 업로드 모드 — 드래그앤드롭으로 PDF·이미지·Excel 직접 처리" },
+      { type: "feat",    text: "구조화 PDF 직접 파서 — 부스번호+업체명 정규식으로 Gemini 없이 업체 추출" },
+      { type: "feat",    text: "세일즈맵 API 직접 등록 — 토큰 설정 후 🚀 세일즈맵 등록 버튼으로 원클릭 업로드" },
+      { type: "feat",    text: "isCeoTitle() 함수 + pushToSalesmap() 재구성 — 대표이사·CEO 직함 감지 및 People/Organization 필드 분리" },
+      { type: "improve", text: "사업자번호 교차검증 (callGeminiGrounded) — Grounding으로 실제 사업자번호 확인" },
+      { type: "fix",     text: "callGeminiGrounded 미정의 버그 수정 + Worker URL /proxy?url= → ?url= 수정" },
+      { type: "improve", text: "Excel 내보내기 컬럼 재구성 — SalesMap 업로드 형식 19+1개 컬럼 정렬" },
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.1",
+    date: "2026-04-10",
+    title: "보안 강화 + 속도 개선 + 기능 확장",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "API Key 하드코딩 제거 → localStorage 보관 + ⚙️ 설정 UI (Vision·Gemini·Bizno·NTS·Worker·SalesMap)" },
+      { type: "feat",    text: "Cloudflare Worker 프록시 배포 — CORS 우회 + 세일즈맵 토큰 보호" },
+      { type: "improve", text: "동시 처리 + Rate Limit 큐 개선 — 배치 처리 속도 향상" },
+      { type: "feat",    text: "중복 감지 (findDuplicate) — 회사명 기반 중복 레코드 경고" },
+      { type: "feat",    text: "업종 자동분류 (autoClassifyIndustry) — 회사명·웹주소 패턴 기반 업종 추론" },
+      { type: "feat",    text: "명함 썸네일 보존 — OCR 처리 후 원본 이미지 미리보기 유지" },
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.0",
+    date: "2026-03-25",
+    title: "전시회 참가업체 자동 추출 탭 최초 구현",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "🏛 전시회 탭 신규 추가 — URL 입력 → 자동 크롤링 → 업체 목록 추출" },
+      { type: "feat", text: "HTML 구조 파서 — 테이블·리스트·JSON 데이터 다중 감지 전략" },
+      { type: "feat", text: "QR코드 스캔 탭 — jsQR 기반 명함 QR 인식 → 연락처 자동 파싱" },
+      { type: "feat", text: "문서 탭 — CSV·Excel·PDF·TXT 파일 업로드 처리" },
+      { type: "feat", text: "bizno.net API 연동 — 회사명으로 사업자번호 자동 조회" },
+      { type: "feat", text: "NTS(국세청) 사업자 상태 조회 — 계속·휴업·폐업 자동 확인" },
+    ],
+    learnLog: []
+  },
+];
+
+const CL_BADGE_LABEL = { feat:"NEW", fix:"FIX", improve:"개선", ui:"UI", learn:"학습" };
+
+function renderVersionBlock(v) {
+  const items = v.items.map(i => `
+    <div class="cl-item">
+      <span class="cl-badge ${i.type}">${CL_BADGE_LABEL[i.type]||i.type}</span>
+      <span>${i.text}</span>
+    </div>`).join('');
+
+  const learns = v.learnLog && v.learnLog.length ? `
+    <div class="cl-section-sep">🧠 OCR 엔진 학습 교정</div>
+    ${v.learnLog.map(l => `
+      <div class="cl-item">
+        <span class="cl-badge learn">학습</span>
+        <span>${l.text}</span>
+      </div>`).join('')}` : '';
+
+  return `
+    <div class="cl-ver-block">
+      <div class="cl-ver-dot ${v.dot||'feat'}"></div>
+      <div class="cl-ver-head">
+        <span class="ver" style="font-size:11px">${v.version}</span>
+        <span class="cl-ver-title">${v.title}</span>
+        <span class="cl-ver-date">${v.date}</span>
+      </div>
+      <div class="cl-items">${items}${learns}</div>
+    </div>`;
+}
+
+function openChangelog() {
+  const modal = $("#changelogModal");
+  if (!modal) return;
+  $("#changelogBody").innerHTML = CHANGELOG.map(renderVersionBlock).join('');
+  modal.classList.remove("hidden");
+}
+
+function closeChangelog() {
+  $("#changelogModal")?.classList.add("hidden");
+}
+
+/* ═══════════════════════════════════════════════════
    ⚙️ 설정 모달 — API Key 관리 (P1)
    ═══════════════════════════════════════════════════ */
 function openSettings() {
@@ -5603,6 +5769,9 @@ function checkApiKeyBanner() {
 $("#settingsModal").addEventListener("click", e => {
   if (e.target === $("#settingsModal")) closeSettings();
 });
+
+// 업데이트 이력 버튼
+$("#changelogBtn").onclick = openChangelog;
 
 // 설정 버튼
 $("#settingsBtn").onclick = openSettings;
