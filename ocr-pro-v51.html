@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.20 — Stage5 회사명 도메인 추론 + WWW 사전 제거</title>
+<title>OCR Pro v9.21 — 도메인 별칭 학습 엔진 (c-lab=씨랩)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.20</span>
+  <span class="ver">v9.21</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2408,6 +2408,28 @@ document.addEventListener("focusout",e=>{
   if(rec){
     const val = e.target.textContent.trim();
     rec[field] = val;
+    /* ★ 학습: _coNameInferred 레코드의 회사명 수정 시 → 도메인 별칭 사전에 저장 */
+    if(field==="회사명"&&val&&rec._coNameInferred){
+      const domBase=(()=>{
+        if(rec.웹주소){
+          try{const u=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"http://"+rec.웹주소);
+            return u.hostname.replace(/^www\./,"").replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase();}catch(e){}
+        }
+        if(rec.이메일){const m=rec.이메일.match(/@([^@]+)$/);
+          return m?m[1].replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase():"";}
+        return "";
+      })();
+      if(domBase&&domBase.length>=2){
+        const aliasMap=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
+        if(aliasMap[domBase]!==val){
+          aliasMap[domBase]=val;
+          localStorage.setItem("ocrProAliasMap",JSON.stringify(aliasMap));
+          console.log(`[학습] 도메인 별칭 저장: "${domBase}" → "${val}"`);
+          toast(`도메인 별칭 학습 완료: ${domBase} → ${val}`, "success");
+        }
+        rec._coNameInferred=false;
+      }
+    }
     /* 내용 입력 시 상태를 완료로 변경 */
     const filled=EDIT_FIELDS.some(f=>rec[f]);
     if(filled&&rec.status==="대기")rec.status="완료";
@@ -2923,6 +2945,10 @@ function parseFullTextToRecords(fullText){
 
   /* ===== Stage 5: 회사명 없는 레코드 — 도메인에서 이름 추론 ===== */
   const FREE_DOMAINS=new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live","me","msn"]);
+  /* ★ 도메인 별칭 사전: 도메인 base → 실제 회사명 (localStorage 학습 데이터 + 하드코딩 초기값) */
+  const HARDCODED_ALIAS={"c-lab":"씨랩"};
+  const learnedAlias=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
+  const DOMAIN_ALIAS={...HARDCODED_ALIAS,...learnedAlias};
   for(const rec of records){
     if(rec.회사명) continue;
     let inferred="";
@@ -2930,14 +2956,14 @@ function parseFullTextToRecords(fullText){
       const wdom=extractWebDom(rec.웹주소);
       if(wdom){
         const base=wdom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
       }
     }
     if(!inferred&&rec.이메일){
       const edom=extractDomain(rec.이메일);
       if(edom){
         const base=edom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
       }
     }
     if(inferred){
@@ -6164,6 +6190,18 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.21",
+    date: "2026-04-25 22:00",
+    title: "도메인 별칭 학습 엔진 — c-lab=씨랩 패턴",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "DOMAIN_ALIAS_MAP 도입: Stage 5에서 추론된 회사명을 사용자가 수정하면 도메인→회사명 매핑을 localStorage에 자동 저장 (학습 엔진)" },
+      { type: "improve", text: "하드코딩 초기값: c-lab → 씨랩. localStorage 학습 데이터가 우선 적용되며 브라우저에 누적됨" },
+      { type: "fix",     text: "도메인 추론 회사명 수정 완료 시 '도메인 별칭 학습 완료' 토스트 알림 표시" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.20",
     date: "2026-04-25 21:00",
