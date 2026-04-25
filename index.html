@@ -2408,6 +2408,9 @@ function classifyToken(t){
   /* 10. 직함 */
   if(TITLE_PATTERN.test(t)) return {field:"담당직함",value:t};
 
+  /* 10-b. ★ 직능 분류어 (경영총괄, 영업총괄 등) → 담당자 오분류 방지, 담당직함으로 */
+  if(ROLE_LABEL_RE.test(t)) return {field:"담당직함",value:t};
+
   /* 11. 2~4자 한글 이름 (업종/직함/비이름 단어 아닌 것) */
   if(/^[가-힣]{2,4}$/.test(t)&&!NON_NAME_KO.has(t)) return {field:"담당자",value:t};
 
@@ -2499,6 +2502,15 @@ function parseFullTextToRecords(fullText){
     for(const part of parts){
       const p=part.trim();
       if(!p) continue;
+      /* ★ 이름+직함 복합 토큰 선처리: "김근수 전무" → 담당자+담당직함 분리
+         (classifyToken의 _text 폴백보다 먼저 처리해야 함) */
+      const compMatch=p.match(/^([가-힣]{2,4})\s+(전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|원장|소장|이사장|센터장|본부장|수석|선임|책임|주임)$/);
+      if(compMatch){
+        tokens.push({field:"담당자",value:compMatch[1]});
+        tokens.push({field:"담당직함",value:compMatch[2]});
+        console.log(`[복합토큰] "${p}" → 담당자="${compMatch[1]}" + 담당직함="${compMatch[2]}"`);
+        continue;
+      }
       const tok=classifyToken(p);
       if(tok){
         tokens.push(tok);
@@ -3665,7 +3677,14 @@ async function confirmImages(){
             r.웹주소=parsed.웹주소||"";
             r.업종=parsed.업종||"";
             r.status="완료";
-            /* ★ AI가 담당자를 못 찾은 경우 — OCR 텍스트에서 이름+직함 패턴으로 직접 추출 */
+            /* ★ Step1: 직능 라벨 오분류 선제 제거 (pushRecord보다 먼저 실행) */
+            if(r.담당자 && ROLE_LABEL_RE.test(r.담당자.trim())){
+              console.log(`[AI→직능교정] "${r.담당자}" → 담당직함 이동`);
+              if(!r.담당직함) r.담당직함=r.담당자;
+              else r.담당직함=r.담당자+" / "+r.담당직함;
+              r.담당자="";
+            }
+            /* ★ Step2: 담당자가 비어있으면 OCR 텍스트에서 이름+직함 패턴으로 직접 추출 */
             if(!r.담당자 && ocrFullText){
               const nm=ocrFullText.match(/([가-힣]{2,4})\s*(전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|원장|소장|사장|대표이사|이사장|센터장|본부장|수석|선임|책임|주임)/);
               if(nm){
