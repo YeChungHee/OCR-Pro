@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.5 — 업데이트 이력 메뉴 + 다포맷 업체리스트</title>
+<title>OCR Pro v9.6 — 명함 파서 패턴 강화 (19종 학습)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -191,7 +191,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.5</span>
+  <span class="ver">v9.6</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2355,7 +2355,7 @@ async function callGoogleVision(base64, _retry = 0){
 const INDUSTRY_SET=new Set(["제조","도소매","건설","서비스","IT","운송","물류","무역","교육","의료","금융","보험","부동산","음식","숙박","출판","방송","통신","전기","전자","기계","화학","섬유","식품","유통","광고","컨설팅","도매","소매","정보통신","에너지","환경","농업","수산","임업","광업","예술","스포츠","부동산업","인쇄","포장","자동차","반도체","바이오","제약","의약","소프트웨어","하드웨어","디자인"]);
 
 /* 직함 패턴 */
-const TITLE_PATTERN=/^(?:대표이사|대표|부사장|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|본부장|센터장|원장장?|수석|선임|교장|교감|교수|학과장|학장|창업기술원장|총장|사무국장|사무총장|국장|처장|소장|연구원|위원장?|회장|부회장|총무|간사|기술이사|감사|고문|자문|디자인이사)$/;
+const TITLE_PATTERN=/^(?:대표이사|대표|부사장|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|본부장|센터장|원장장?|수석|선임|교장|교감|교수|학과장|학장|창업기술원장|총장|사무국장|사무총장|국장|처장|소장|연구원|위원장?|회장|부회장|총무|간사|기술이사|감사|고문|자문|디자인이사|선임연구원|책임연구원|수석연구원|선임기술원|책임기술원|기술영업이사|영업이사|전략이사|사업이사|운영이사|기술이사장|상임이사|비상임이사|이사대우|부이사장|영업본부장|사업본부장|전략본부장|Account\s*Director|Head\s*of\s*Operations|Chief\s*Executive|Founder|Co-Founder|FOUNDER)$/;
 
 /* 주소 시작 패턴 */
 const ADDR_PREFIX=/^(?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원도|충청북도|충청남도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)/;
@@ -2382,7 +2382,11 @@ function isHeaderLine(line){
 const CERT_LABEL_SET=new Set(["KS","KG","KC","CE","ISO","GS","GR","EM","IR","NET","SH","SD","UL","TUV","SGS","INNOBIZ","MAINBIZ","NEP","NET","NT","NP","GMP","HACCP","HALAL","FDA","FCC","CB","CCC","PSE","JIS","BIS","KOLAS","KAS","KOSHA","OHSAS","EAC"]);
 const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
-const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체"]);
+const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
+  /* P-3 지점/본사 오분류 방지 */
+  "본점","지점","본사","영업소","출장소","대리점","현장",
+  /* P-9 직무수식어 — "기술영업 이사" 에서 "기술영업" 이름 오분류 방지 */
+  "기술영업","경영지원","해외영업","국내영업","전략기술","기획영업","영업관리","사업개발","기술개발","연구개발","품질관리","생산관리","물류관리","마케팅","홍보팀","전략팀","전략기술그룹"]);
 
 /* 개별 토큰 분류 — 순서 중요: 업종 > 직함 > 이름 */
 function classifyToken(t){
@@ -2396,6 +2400,10 @@ function classifyToken(t){
   /* 인증번호 패턴: "9001", "14001", "D 6008" 등 */
   if(/^\d{4,5}$/.test(t)) return null;
   if(/^[A-Z]\s?\d{3,5}$/.test(t)) return null;
+  /* P-4: 한자(漢字)만으로 이루어진 1~4자 토큰 → 이름/회사명 오분류 방지 (漢谷, 漢字 아호 등) */
+  if(/^[\u4E00-\u9FFF\u3400-\u4DBF]{1,4}$/.test(t)) return null;
+  /* SNS ID 라벨 (KakaoTalk ID, WeChat ID) → 스킵 (P-8) */
+  if(/^(?:KakaoTalk|WeChat|Line|Instagram|LinkedIn)\s*ID$/i.test(t)) return null;
 
   /* 1. 사업자번호 */
   if(/\d{3}-\d{2}-\d{5}/.test(t)) return {field:"사업자번호",value:t.match(/\d{3}-\d{2}-\d{5}/)[0]};
@@ -2487,12 +2495,20 @@ function parseFullTextToRecords(fullText){
 
     /* ★ 라벨 접두사 분리: "T. 041)742-9445" → "041)742-9445", "F. 041)..." → skip */
     processLine=processLine.replace(/^(?:Tel|T)\.\s*/i,"");
-    /* Mobile/M./HP 라벨 제거 (뒤에 전화번호 있을 때만) */
-    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P)\.\s*(?=[\d+])/i,"");
+    /* Mobile/M./HP/Dir/C.P/PON 라벨 제거 (뒤에 전화번호 있을 때만) — P-6 확장 */
+    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P|Dir|Direct|C\.P|PON)\s*[.:)]\s*(?=[\d+])/i,"");
     /* E-mail/E. 라벨 제거 */
     processLine=processLine.replace(/^(?:E-?mail|E)\.\s*/i,"");
-    /* Fax 줄은 통째로 스킵 */
-    if(/^(?:Fax|F)\.\s*\d/i.test(line)){processLine="";continue;}
+    /* Website/Web/W. 라벨 제거 — P-6 */
+    processLine=processLine.replace(/^(?:Website|Web|W)\s*[.:)]\s*(?=\S)/i,"");
+    /* Fax/Fax_ 줄은 통째로 스킵 */
+    if(/^(?:Fax_?|F)\.\s*\d/i.test(line)){processLine="";continue;}
+    /* P-7: 파이프(|) 구분자 → 탭으로 변환해서 각 값을 개별 분류 */
+    if(/\|/.test(processLine)) processLine=processLine.replace(/\s*\|\s*/g,"\t");
+    /* P-5: 신우편번호(5자리) + 주소 → 우편번호 제거 후 주소로 처리 */
+    processLine=processLine.replace(/^\d{5}\s+(?=[가-힣])/,"");
+    /* P-6 KakaoTalk/WeChat ID 줄 스킵 */
+    if(/^(?:KakaoTalk|WeChat|Line|Instagram|LinkedIn)\s*ID\s*:/i.test(processLine)){processLine="";continue;}
 
     /* ★ 한글 이름 OCR 공백 보정: "조 청 헌" → "조청헌" (2~4자 한글만 있는 짧은 줄) */
     const koSpaceTest=processLine.replace(/\s+/g,"");
@@ -2534,13 +2550,42 @@ function parseFullTextToRecords(fullText){
     for(const part of parts){
       const p=part.trim();
       if(!p) continue;
+      /* ★ P-1: 괄호형 이중이름 "임재범(Jason Lim)" → 한글 이름만 담당자로 추출 */
+      const parenNameMatch=p.match(/^([가-힣]{2,4})\(([A-Za-z][A-Za-z\s.]+)\)$/);
+      if(parenNameMatch&&!NON_NAME_KO.has(parenNameMatch[1])){
+        tokens.push({field:"담당자",value:parenNameMatch[1]});
+        console.log(`[괄호이름] "${p}" → 담당자="${parenNameMatch[1]}"`);
+        continue;
+      }
+      /* ★ P-3: 직함역순 "이사 이종원" → 담당직함 + 담당자 분리 */
+      const revTitleMatch=p.match(/^(대표이사|대표|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|팀장|실장|본부장|센터장|이사장|감사|수석|선임|사장|상무)\s+([가-힣]{2,4})$/);
+      if(revTitleMatch){
+        tokens.push({field:"담당직함",value:revTitleMatch[1]});
+        tokens.push({field:"담당자",value:revTitleMatch[2]});
+        console.log(`[직함역순] "${p}" → 담당직함="${revTitleMatch[1]}" + 담당자="${revTitleMatch[2]}"`);
+        continue;
+      }
+      /* ★ P-2: 공백형 한글→영문 병기 "도영훈 Yeong-Hun Do" → 한글 이름만 담당자로 */
+      const koEnNameMatch=p.match(/^([가-힣]{2,4})\s+([A-Z][a-zA-Z\-]+(?:\s+[A-Z][a-zA-Z]+)?)$/);
+      if(koEnNameMatch&&!NON_NAME_KO.has(koEnNameMatch[1])&&!ROLE_LABEL_RE.test(koEnNameMatch[1])&&!TITLE_PATTERN.test(koEnNameMatch[1])){
+        tokens.push({field:"담당자",value:koEnNameMatch[1]});
+        console.log(`[한영이름] "${p}" → 담당자="${koEnNameMatch[1]}"`);
+        continue;
+      }
       /* ★ 이름+직함 복합 토큰 선처리: "김근수 전무" → 담당자+담당직함 분리
-         (classifyToken의 _text 폴백보다 먼저 처리해야 함) */
+         (classifyToken의 _text 폴백보다 먼저 처리해야 함)
+         P-9: NON_NAME_KO 또는 ROLE_LABEL_RE 해당 시 전체를 담당직함으로 처리 */
       const compMatch=p.match(/^([가-힣]{2,4})\s+(전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|원장|소장|이사장|센터장|본부장|수석|선임|책임|주임)$/);
       if(compMatch){
-        tokens.push({field:"담당자",value:compMatch[1]});
-        tokens.push({field:"담당직함",value:compMatch[2]});
-        console.log(`[복합토큰] "${p}" → 담당자="${compMatch[1]}" + 담당직함="${compMatch[2]}"`);
+        if(NON_NAME_KO.has(compMatch[1])||ROLE_LABEL_RE.test(compMatch[1])){
+          /* "기술영업 이사" → 직무수식어+직함 → 담당직함 전체로 저장 */
+          tokens.push({field:"담당직함",value:p});
+          console.log(`[직무직함] "${p}" → 담당직함="${p}"`);
+        } else {
+          tokens.push({field:"담당자",value:compMatch[1]});
+          tokens.push({field:"담당직함",value:compMatch[2]});
+          console.log(`[복합토큰] "${p}" → 담당자="${compMatch[1]}" + 담당직함="${compMatch[2]}"`);
+        }
         continue;
       }
       const tok=classifyToken(p);
@@ -5562,6 +5607,30 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.6",
+    date: "2026-04-25",
+    title: "명함 파서 패턴 강화 (19장 학습)",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "P-1: 괄호형 이중이름 오분류 수정 — '임재범(Jason Lim)' → 한글 이름만 담당자로 정확 추출" },
+      { type: "fix",     text: "P-2: 공백형 한글→영문 병기 수정 — '도영훈 Yeong-Hun Do' → 한글 이름 담당자 추출" },
+      { type: "fix",     text: "P-3: 직함역순 레이아웃 수정 — '이사 이종원' → 담당직함+담당자 정확 분리" },
+      { type: "fix",     text: "P-4: 한자 호칭 오분류 방지 — '漢谷' 등 한자만으로 된 토큰 NON_NAME 처리" },
+      { type: "fix",     text: "P-5: 신우편번호(5자리) 주소 분리 — '06632 서울...' 에서 우편번호 제거 후 주소 처리" },
+      { type: "fix",     text: "P-6: 전화 라벨 확장 — Dir/C.P/PON/Website/Web/W 라벨 인식 추가" },
+      { type: "fix",     text: "P-7: 파이프(|) 구분자 처리 — '070...|010...|email@' 한 줄에서 각 값 개별 파싱" },
+      { type: "fix",     text: "P-8: SNS ID 줄 스킵 — KakaoTalk/WeChat/Line ID 라벨 스킵 처리" },
+      { type: "fix",     text: "P-9: 복합직함 처리 — '기술영업 이사' NON_NAME 체크 → 전체를 담당직함으로 저장" },
+      { type: "improve", text: "NON_NAME_KO 확장 — 본점/지점/본사/영업소 및 직무수식어(기술영업·경영지원 등) 추가" },
+      { type: "improve", text: "TITLE_PATTERN 확장 — 선임연구원·책임연구원·영업본부장·Account Director 등 추가" },
+    ],
+    learnLog: [
+      { text: "19장 명함 샘플 분석: 괄호형·공백형 이중이름, 직함역순, 한자호칭, 파이프구분자 등 10종 패턴 발견" },
+      { text: "Dir/C.P/PON/Web 라벨: 국내 명함에서 M./T./F. 외에 다양한 라벨 형식 확인 → PHONE_LABEL 계열 확장" },
+      { text: "'기술영업 이사'처럼 직무수식어+직함 형태: compMatch가 '기술영업'을 이름으로 오인 → NON_NAME_KO 체크 추가" },
+    ]
+  },
   {
     version: "v9.5",
     date: "2026-04-25",
