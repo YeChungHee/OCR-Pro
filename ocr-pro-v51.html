@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.17 — 파일명 회사명 오입력 + 베어 도메인 인식 수정</title>
+<title>OCR Pro v9.18 — 이메일↔웹도메인 교차 병합 + www 회사명 제거</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.17</span>
+  <span class="ver">v9.18</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2588,6 +2588,7 @@ function classifyToken(t){
   if(/(?:㈜|주식회사|\(주\)|㈜)/.test(t)){
     let cv=t.replace(/^[A-Z]{1,4}\s+/,""); /* SH (주)신화 → (주)신화 */
     cv=cv.replace(/([가-힣])\s+([가-힣])/g,"$1$2"); /* 신 화 → 신화 */
+    cv=cv.replace(/\s+(?:www\.?|http[s]?:?)$/i,"").trim(); /* (주)엑스업 www → (주)엑스업 */
     return {field:"회사명",value:cv};
   }
   if(/(?:시스템|테크|솔루션|소프트|컨설팅|엔지니어링|커뮤니케이션|인터내셔널|코리아|그룹|홀딩스|파트너스|네트웍스|네트워크|이엔지|건설산업|종합건설|산업|전자|중공업|에너지|바이오|메디컬|푸드|로지스틱스|캐피탈|파이낸스|인베스트|글로벌|디자인|미디어|플러스|랩|스튜디오|컴퍼니|엔터프라이즈)$/.test(t)&&t.length>=4) return {field:"회사명",value:t};
@@ -2884,7 +2885,9 @@ function parseFullTextToRecords(fullText){
         const sameWebDom   = wdom&&wdom2&&wdom===wdom2;
         const samePhone    = ph&&ph2&&ph.length>=7&&ph===ph2;
         const emptyRec2    = !r2.회사명&&dom2==="";
-        if(sameEmailDom||sameWebDom||samePhone||emptyRec2){
+        /* ★ 교차 매칭: r의 이메일도메인 = r2의 웹도메인 (JUVENUI↔쥬베뉴 패턴) */
+        const crossMatch   = (dom&&wdom2&&dom===wdom2)||(dom2&&wdom&&dom2===wdom);
+        if(sameEmailDom||sameWebDom||samePhone||crossMatch||emptyRec2){
           /* r2의 비어있지 않은 필드를 r에 보충 */
           for(const k of Object.keys(r)){
             if(!r[k]&&r2[k]) r[k]=r2[k];
@@ -6127,6 +6130,17 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.18",
+    date: "2026-04-25 19:00",
+    title: "이메일↔웹도메인 교차 병합 + www 회사명 제거",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "JUVENUI + 쥬베뉴주식회사 교차 매칭 병합: r의 이메일도메인(juvenui.com) = r2의 웹도메인(juvenui.com) → 같은 회사로 인식" },
+      { type: "fix",     text: "(주)엑스업 www → www 접미사 자동 제거 (회사명 뒤 www/http 패턴 클린업)" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.17",
     date: "2026-04-25 18:30",
