@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.14 — SIMTOS 전체 페이지 수집 + detectMaxPage 3단계 fallback</title>
+<title>OCR Pro v9.15 — SIMTOS 45페이지 전체 수집 + 모달 닫기 버튼</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.14</span>
+  <span class="ver">v9.15</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -328,6 +328,7 @@ if(location.protocol==="file:"){
 <!-- 📋 업데이트 이력 모달 -->
 <div id="changelogModal" class="modal-overlay hidden" onclick="if(event.target===this)closeChangelog()">
   <div class="modal-box" style="width:620px;max-height:88vh">
+    <button onclick="closeChangelog()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--mut);line-height:1;padding:4px 6px;border-radius:6px;transition:background .15s" title="닫기" onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background='none'">✕</button>
     <div class="modal-title">📋 업데이트 이력</div>
     <div class="modal-subtitle">버전별 기능 변경 내용 및 OCR 엔진 학습 교정 이력</div>
     <div id="changelogBody" class="cl-timeline"></div>
@@ -5312,6 +5313,41 @@ function getBbsPageUrl(html, baseUrl, pg) {
   } catch(e) { return null; }
 }
 
+/* 페이지 그룹 탐색 — paging 영역에서 currentMax+1 이상의 href 찾기 (SIMTOS 등) */
+function findNextGroupPageUrl(html, baseUrl, pageParam, currentMax) {
+  const re = new RegExp(`href=['"]([^'"]*[?&]${pageParam}=(\\d+)[^'"]*)['"']`, 'gi');
+  let m, best = null;
+  while ((m = re.exec(html)) !== null) {
+    const n = parseInt(m[2]);
+    if (n > currentMax && (!best || n < best.n)) {
+      best = { url: m[1], n };
+    }
+  }
+  if (!best) return null;
+  try { return new URL(best.url, baseUrl).href; } catch(e) { return null; }
+}
+
+/* 진짜 최대 페이지 탐색 — next group 링크를 체인으로 추적 (최대 30회) */
+async function detectTrueMaxPage(html, baseUrl, pageParam, onProgress) {
+  let currentMax = detectMaxPage(html, pageParam);
+  if (currentMax <= 1) return 1;
+
+  let currentHtml = html;
+  for (let i = 0; i < 30; i++) {
+    const nextUrl = findNextGroupPageUrl(currentHtml, baseUrl, pageParam, currentMax);
+    if (!nextUrl) break;
+    if (onProgress) onProgress(currentMax);
+    const nextHtml = await fetchWebpageHTML(nextUrl);
+    if (!nextHtml) break;
+    const newMax = detectMaxPage(nextHtml, pageParam);
+    if (newMax <= currentMax) break;
+    currentMax = newMax;
+    currentHtml = nextHtml;
+    await sleep(200);
+  }
+  return currentMax;
+}
+
 /* BBS 전용 최대 페이지 감지 — ?page=N (페이지네이션) 과 &page=N (상세링크) 구분 */
 function detectBbsMaxPage(html) {
   let max = 1;
@@ -5812,7 +5848,16 @@ async function fetchAllExhibitors() {
     updateFormatBadge(isBbs ? 'html' : 'html');
     if (isBbs) toast('🏛 게시판형(BBS) 구조 감지 — 직접 파서 적용', 'info');
     const pageParam  = isBbs ? 'page' : (getExpoPreset(url)?.pageParam || detectPageParam(url));
-    const detectedMax = isBbs ? detectBbsMaxPage(firstHtml) : detectMaxPage(firstHtml, pageParam);
+    let detectedMax;
+    if (isBbs) {
+      detectedMax = detectBbsMaxPage(firstHtml);
+    } else {
+      // html_table 사이트: next group 링크를 체인 추적해 진짜 마지막 페이지 탐색
+      updateExpoProgress('🔍 전체 페이지 수 탐색 중...', 0, 0);
+      detectedMax = await detectTrueMaxPage(firstHtml, url, pageParam, (cur) => {
+        updateExpoProgress(`🔍 페이지 그룹 탐색 중... (현재 ${cur}페이지 확인)`, 0, 0);
+      });
+    }
     const maxPage   = Math.min(detectedMax, maxPagesLimit);
 
     console.log(`[전시회] BBS=${isBbs}, pageParam="${pageParam}", detectedMax=${detectedMax}, maxPage=${maxPage}`);
@@ -6041,6 +6086,22 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.15",
+    date: "2026-04-25 15:51",
+    title: "SIMTOS 45페이지 전체 수집 + 모달 상단 닫기 버튼",
+    dot: "fix",
+    items: [
+      { type: "feat",    text: "findNextGroupPageUrl() 신규 — paging 영역에서 현재 최대페이지+1 이상의 href 탐지 (SIMTOS의 공백텍스트 ▶ 버튼 패턴 지원)" },
+      { type: "feat",    text: "detectTrueMaxPage() 신규 async — next group 링크 체인 추적(최대 30회 반복). SIMTOS: 1→11→21→31→41 탐색 후 max=45 반환" },
+      { type: "fix",     text: "fetchAllExhibitors: html_table 사이트에서 detectTrueMaxPage() 사용. 탐색 중 진행상황 toast '🔍 페이지 그룹 탐색 중... (현재 N페이지 확인)' 표시" },
+      { type: "feat",    text: "업데이트 이력 모달 상단 우측 ✕ 닫기 버튼 추가 (hover 시 배경색 변경)" },
+    ],
+    learnLog: [
+      { text: "SIMTOS paging HTML: 1~10 숫자 링크 + 마지막 <a href='?GotoPage=11'> </a> (공백 텍스트 = next group 버튼). detectMaxPage는 10만 인식 → 45페이지 중 10페이지만 수집하는 버그" },
+      { text: "해결 패턴: currentMax보다 큰 GotoPage href를 따라가며 새 max를 발견. 45페이지 = 4번 extra fetch (약 0.8초 추가)" },
+    ]
+  },
   {
     version: "v9.14",
     date: "2026-04-25 15:23",
