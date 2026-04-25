@@ -531,12 +531,11 @@ if(location.protocol==="file:"){
   <th style="width:32px"><input type="checkbox" class="ck" id="ckAll"/></th>
   <th style="width:44px">출처</th>
   <th style="min-width:130px">회사명<span class="sm-col">Organization - 이름</span></th>
-  <th style="min-width:80px">담당직원<span class="sm-col">Organization - 담당직원</span></th>
-  <th style="min-width:65px">담당직함<span class="sm-col">Organization - 담당직함</span></th>
-  <th style="min-width:70px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
-  <th style="min-width:100px">전화(대표)<span class="sm-col">Organization - 전화</span></th>
-  <th style="min-width:140px">이메일<span class="sm-col">People - 이메일</span></th>
   <th style="min-width:105px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
+  <th style="min-width:80px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
+  <th style="min-width:80px">피플 이름<span class="sm-col">People - 이름</span></th>
+  <th style="min-width:105px">전화(010)<span class="sm-col">People - 전화</span></th>
+  <th style="min-width:145px">이메일<span class="sm-col">People - 이메일</span></th>
   <th style="min-width:90px">업종<span class="sm-col">Organization - 업종</span></th>
   <th style="min-width:70px">기업형태<span class="sm-col">Organization - 기업형태</span></th>
   <th style="min-width:120px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
@@ -2115,15 +2114,21 @@ function render(){
       biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
     }
 
+    // People - 전화: 010 계열 모바일만
+    const allPhones = [r.전화, r.휴대폰].filter(Boolean);
+    const mobileP = esc(allPhones.find(p => isMobile(p)) || "");
+    // People - 이름: 담당자 있으면 담당자, 없으면 대표자
+    const peopleName = esc(r.담당자 || r.대표자 || "");
+
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
       <td style="white-space:nowrap">${thumbHtml}</td>
       <td contenteditable="true" class="editable" data-field="회사명" data-id="${r.id}">${esc(r.회사명)}${dupBadge}</td>
-      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}">${esc(r.담당자)}</td>
-      <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}">${esc(r.전화)}</td>
-      <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>
       <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${esc(r.대표자)}</td>
+      <td style="font-size:12px;color:var(--sub)">${peopleName}</td>
+      <td style="font-size:12px">${mobileP}</td>
+      <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td contenteditable="true" class="editable" data-field="업종" data-id="${r.id}">${esc(r.업종)}${indChip}</td>
       <td contenteditable="true" class="editable" data-field="기업형태" data-id="${r.id}">${esc(r.기업형태)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
