@@ -3665,6 +3665,15 @@ async function confirmImages(){
             r.웹주소=parsed.웹주소||"";
             r.업종=parsed.업종||"";
             r.status="완료";
+            /* ★ AI가 담당자를 못 찾은 경우 — OCR 텍스트에서 이름+직함 패턴으로 직접 추출 */
+            if(!r.담당자 && ocrFullText){
+              const nm=ocrFullText.match(/([가-힣]{2,4})\s*(전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|원장|소장|사장|대표이사|이사장|센터장|본부장|수석|선임|책임|주임)/);
+              if(nm){
+                r.담당자=nm[1];
+                if(!r.담당직함) r.담당직함=nm[2];
+                console.log(`[이름폴백] "${nm[1]} ${nm[2]}" OCR 패턴 추출`);
+              }
+            }
             pushRecord(r);
           }
           successCount++;
