@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.18 — 이메일↔웹도메인 교차 병합 + www 회사명 제거</title>
+<title>OCR Pro v9.19 — Solution System 오분류 + WWW 토큰 수정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.18</span>
+  <span class="ver">v9.19</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2528,7 +2528,7 @@ function isHeaderLine(line){
 
 /* 인증마크·라벨·로고 약어 — 담당자·회사명 오분류 방지 */
 const CERT_LABEL_SET=new Set(["KS","KG","KC","CE","ISO","GS","GR","EM","IR","NET","SH","SD","UL","TUV","SGS","INNOBIZ","MAINBIZ","NEP","NET","NT","NP","GMP","HACCP","HALAL","FDA","FCC","CB","CCC","PSE","JIS","BIS","KOLAS","KAS","KOSHA","OHSAS","EAC"]);
-const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA",
+const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA","WWW","HTTP","HTTPS",
   /* 영문 일반단어 — 담당자 오분류 방지 (Medical, Digital 등) */
   "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
@@ -2610,7 +2610,12 @@ function classifyToken(t){
 
   /* 11-b. 영문 이름 패턴 (First Last, 단일 영문 이름 등) */
   if(/^[A-Z][a-z]{1,15}$/.test(t)) return {field:"담당자",value:t};
-  if(/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(t)) return {field:"담당자",value:t};
+  /* 두 단어 영문명: 각 단어가 SKIP_LABEL_SET에 있으면 비이름 → null (Solution System, Medical Group 등) */
+  if(/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(t)){
+    const words=t.split(" ");
+    if(words.some(w=>SKIP_LABEL_SET.has(w.toUpperCase()))) return null;
+    return {field:"담당자",value:t};
+  }
   if(/^[A-Z][a-z]+[-][A-Z][a-z]+$/.test(t)) return {field:"담당자",value:t};
 
   /* 12. 숫자+하이픈 짧은 것 → 스킵 */
@@ -6130,6 +6135,17 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.19",
+    date: "2026-04-25 19:30",
+    title: "Solution System 오분류 + WWW 토큰 오분류 수정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "두 단어 영문명 패턴: 각 단어가 SKIP_LABEL_SET에 있으면 담당자 오분류 차단 (Solution System → Medical System 등)" },
+      { type: "fix", text: "WWW, HTTP, HTTPS 단독 토큰 → SKIP_LABEL_SET 추가로 회사명/담당자 오분류 방지" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.18",
     date: "2026-04-25 19:00",
