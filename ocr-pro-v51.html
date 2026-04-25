@@ -2179,6 +2179,24 @@ function findDuplicate(rec) {
 }
 
 /* records에 추가 전 중복 체크 래퍼 — 중복이면 _dupOf 설정 후 추가 */
+/* ═══════════════════════════════════════════════════
+   📊 신뢰도 자동 계산
+   기준: SalesMap 등록 가능성 (회사명 + 사업자번호 + 연락처)
+   높음 🟢 : 회사명 + 사업자번호 + (전화 or 이메일)
+   보통 🟡 : 회사명 + (전화 or 이메일)  — 사업자번호 없음
+   낮음 🔴 : 회사명만 있거나 연락처 전무
+   ═══════════════════════════════════════════════════ */
+function calcReliability(rec) {
+  if (!rec.회사명 || rec.회사명.trim().length < 2) return "낮음";
+  const hasBizno   = !!rec.사업자번호;
+  const hasPhone   = !!(rec.전화 || rec.휴대폰);
+  const hasEmail   = !!rec.이메일;
+  const hasContact = hasPhone || hasEmail;
+  if (hasBizno && hasContact) return "높음";
+  if (hasContact)             return "보통";
+  return "낮음";
+}
+
 function pushRecord(rec) {
   const dup = findDuplicate(rec);
   if (dup) {
@@ -2186,7 +2204,9 @@ function pushRecord(rec) {
     console.log(`[중복감지] "${rec.회사명}" ← 기존 "${dup.회사명}" (${dup.id})`);
   }
   // 업종 자동 태깅 (빈 경우)
-  if (!rec.업종) rec.업종 = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
+  if (!rec.업종)    rec.업종    = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
+  // 신뢰도 자동 계산 (빈 경우)
+  if (!rec.신뢰도)  rec.신뢰도  = calcReliability(rec);
   records.push(rec);
 }
 
@@ -2966,6 +2986,7 @@ function sheetRowToRec(row,colMap,src){
   r.업종=String(row[colMap["업종"]]||"").trim();
   r.기업형태=String(row[colMap["기업형태"]]||"").trim();
   r.status="완료";
+  r.신뢰도=calcReliability(r);
   return r;
 }
 
