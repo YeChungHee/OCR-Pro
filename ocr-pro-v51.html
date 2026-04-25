@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.16 — 명함 OCR 영문+한글 법인명 분리 오류 수정</title>
+<title>OCR Pro v9.17 — 파일명 회사명 오입력 + 베어 도메인 인식 수정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.16</span>
+  <span class="ver">v9.17</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2528,7 +2528,9 @@ function isHeaderLine(line){
 
 /* 인증마크·라벨·로고 약어 — 담당자·회사명 오분류 방지 */
 const CERT_LABEL_SET=new Set(["KS","KG","KC","CE","ISO","GS","GR","EM","IR","NET","SH","SD","UL","TUV","SGS","INNOBIZ","MAINBIZ","NEP","NET","NT","NP","GMP","HACCP","HALAL","FDA","FCC","CB","CCC","PSE","JIS","BIS","KOLAS","KAS","KOSHA","OHSAS","EAC"]);
-const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA"]);
+const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA",
+  /* 영문 일반단어 — 담당자 오분류 방지 (Medical, Digital 등) */
+  "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
   /* P-3 지점/본사 오분류 방지 */
@@ -2573,8 +2575,11 @@ function classifyToken(t){
   if(/0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4}/.test(t)) return {field:"전화",value:t.match(/0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4}/)[0]};
   if(/0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)) return {field:"전화",value:t.match(/0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}/)[0]};
 
-  /* 5. 웹주소 */
+  /* 5. 웹주소 (http://, www. 접두사 있는 경우) */
   if(/(?:https?:\/\/|www\.)\S+/i.test(t)) return {field:"웹주소",value:t.match(/(?:https?:\/\/|www\.)\S+/i)[0]};
+  /* 5b. 베어 도메인 URL — juvenui.com, x-up.tech, andopen.co.kr 등 접두사 없는 경우 */
+  if(/^[a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)*\.(?:com|kr|net|org|io|ai|tech|app|dev|biz|info|co\.kr|or\.kr|go\.kr|ac\.kr|pe\.kr|re\.kr|shop|store|cloud|site|online)$/.test(t.toLowerCase()))
+    return {field:"웹주소",value:t};
 
   /* 6. 주소 */
   if(ADDR_PREFIX.test(t)) return {field:"주소",value:t};
@@ -4033,7 +4038,7 @@ async function confirmImages(){
             const parsed=parseBusinessCard(ocrFullText);
             const r=emptyRec("이미지");
             r.thumb=p.dataUrl;
-            r.회사명=parsed.회사명||p.name.replace(/\.[^.]+$/,"");
+            r.회사명=parsed.회사명||((/^(?:IMG|DSC|DCIM|PHOTO|PIC|IMAGE|SCREENSHOT|CAPTURE)_?\d+/i.test(p.name))?"":p.name.replace(/\.[^.]+$/,""));
             r.담당자=parsed.담당자;
             r.담당직함=parsed.담당직함;
             r.전화=parsed.전화;
@@ -4064,7 +4069,7 @@ async function confirmImages(){
         const parsed=parseBusinessCard(text);
         const r=emptyRec("이미지");
         r.thumb=p.dataUrl;
-        r.회사명=parsed.회사명||p.name.replace(/\.[^.]+$/,"");
+        r.회사명=parsed.회사명||((/^(?:IMG|DSC|DCIM|PHOTO|PIC|IMAGE|SCREENSHOT|CAPTURE)_?\d+/i.test(p.name))?"":p.name.replace(/\.[^.]+$/,""));
         r.담당자=parsed.담당자;
         r.담당직함=parsed.담당직함;
         r.전화=parsed.전화;
@@ -6122,6 +6127,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.17",
+    date: "2026-04-25 18:30",
+    title: "IMG 파일명 회사명 오입력 + 베어 도메인 인식 + 영문단어 오분류 수정",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "IMG_2856 2 파일명 → 회사명 fallback 차단: OCR 실패 시 IMG/DSC/PHOTO_ 파일명은 회사명에 사용 안 함" },
+      { type: "fix",     text: "juvenui.com 등 www. 없는 베어 도메인 URL → 웹주소로 정확 인식 (co.kr, .io, .tech 등 지원)" },
+      { type: "fix",     text: "베어 도메인 인식으로 Stage4 웹주소 병합 정상 작동 — JUVENUI + 쥬베뉴주식회사 → 1개 레코드" },
+      { type: "fix",     text: "Medical, Digital, Global 등 영문 일반단어 → 담당자 오분류 방지 (SKIP_LABEL_SET 확장)" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.16",
     date: "2026-04-25 17:30",
