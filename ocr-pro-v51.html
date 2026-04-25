@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.19 — Solution System 오분류 + WWW 토큰 수정</title>
+<title>OCR Pro v9.20 — Stage5 회사명 도메인 추론 + WWW 사전 제거</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.19</span>
+  <span class="ver">v9.20</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2704,6 +2704,9 @@ function parseFullTextToRecords(fullText){
     /* 주소 시작 키워드 앞에 공백 삽입 (붙어있는 경우 분리) */
     processLine=processLine.replace(/((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원도|충청북도|충청남도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주))/g," $1");
 
+    /* ★ v9.20: 줄 끝 고아 WWW 제거 — 토큰화 전 사전 처리 */
+    processLine=processLine.replace(/\s+www\.?\s*$/i,"");
+
     /* 탭/다중공백으로 1차 분리 (전체 줄 매칭은 하지 않음 — 복합 데이터 손실 방지) */
     const parts=processLine.split(/\t+|\s{2,}/);
     for(const part of parts){
@@ -2916,6 +2919,32 @@ function parseFullTextToRecords(fullText){
     }
     records.length=0;
     records.push(...merged);
+  }
+
+  /* ===== Stage 5: 회사명 없는 레코드 — 도메인에서 이름 추론 ===== */
+  const FREE_DOMAINS=new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live","me","msn"]);
+  for(const rec of records){
+    if(rec.회사명) continue;
+    let inferred="";
+    if(rec.웹주소){
+      const wdom=extractWebDom(rec.웹주소);
+      if(wdom){
+        const base=wdom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=base;
+      }
+    }
+    if(!inferred&&rec.이메일){
+      const edom=extractDomain(rec.이메일);
+      if(edom){
+        const base=edom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=base;
+      }
+    }
+    if(inferred){
+      rec.회사명=inferred;
+      rec._coNameInferred=true;
+      console.log("[Stage 5] 회사명 추론:",inferred,"← 도메인");
+    }
   }
 
   console.log("[Vision v3] 최종 레코드:",records.length,"건");
@@ -6135,6 +6164,17 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.20",
+    date: "2026-04-25 21:00",
+    title: "Stage 5 회사명 도메인 추론 + WWW 사전 제거",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "Stage 5 신설: OCR 텍스트에 회사명이 없는 레코드를 웹주소·이메일 도메인에서 자동 추론 (awesomelab, clika, enhans, sophiecompany 등 빈 회사명 보완)" },
+      { type: "fix", text: "줄 끝 고아 'www' 토큰 사전 제거: 토큰화 전 processLine에서 제거하여 회사명 말미에 www 붙는 문제 근본 차단" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.19",
     date: "2026-04-25 19:30",
