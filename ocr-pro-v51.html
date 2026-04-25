@@ -533,13 +533,10 @@ if(location.protocol==="file:"){
   <th style="min-width:130px">회사명<span class="sm-col">Organization - 이름</span></th>
   <th style="min-width:105px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
   <th style="min-width:80px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
-  <th style="min-width:80px">피플 이름<span class="sm-col">People - 이름</span></th>
+  <th style="min-width:80px">담당직원<span class="sm-col">People - 이름</span></th>
   <th style="min-width:105px">전화(010)<span class="sm-col">People - 전화</span></th>
   <th style="min-width:145px">이메일<span class="sm-col">People - 이메일</span></th>
-  <th style="min-width:90px">업종<span class="sm-col">Organization - 업종</span></th>
-  <th style="min-width:70px">기업형태<span class="sm-col">Organization - 기업형태</span></th>
   <th style="min-width:120px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
-  <th style="min-width:160px">주소<span class="sm-col">Organization - 주소</span></th>
   <th style="min-width:55px">신뢰도</th>
   <th style="width:52px">상태</th>
   <th style="width:50px"></th>
@@ -1157,8 +1154,8 @@ async function ocrHeicWithGemini(base64Data, mimeType){
 
 [필드 정의]
 - "회사명": 법인/업체/기관의 공식 명칭. ㈜, (주), 주식회사 등이 포함됨.
-- "담당자": 사람 이름(한글 2~4자 또는 영문 인명). 라벨·부서·직함이 아님.
-- "담당직함": 직책/직위 (대표이사, 부장 등)
+- "담당자": 반드시 실제 사람의 성명(한글 2~4자 또는 영문 인명). 절대 라벨·부서·직함·직능분류가 아님.
+- "담당직함": 직책/직위 (대표이사, 전무, 이사, 부장 등) 및 직능 분류(경영총괄, 영업총괄 등)
 - "전화": 유선 전화번호. "T.", "Tel" 라벨 제외.
 - "휴대폰": 010, 011, 016, 017, 018, 019으로 시작하는 모바일 번호. +82-10도 010으로 변환. "M.", "Mobile" 라벨 제외.
 - "이메일": @가 포함된 주소. "E-mail" 라벨 제외.
@@ -1171,6 +1168,8 @@ async function ocrHeicWithGemini(base64Data, mimeType){
 [규칙]
 - "Mobile.", "Tel", "E-mail" 등 라벨은 담당자가 아닙니다.
 - 부서명(사업부, 영업본부)은 담당자가 아닙니다.
+- ★ "경영총괄", "영업총괄", "기획총괄", "경영지원" 등 ~총괄/~지원/~본부로 끝나는 직능 분류어는 담당자가 아닙니다. 담당직함에 넣으세요.
+- ★ 담당자 판별: 이름 위에 "경영총괄" 같은 직능 분류가 있고 아래에 "홍길동 전무"가 있으면 담당자="홍길동", 담당직함="전무 (경영총괄)".
 - 인증마크(조달청 우수제품, 여성기업, ISO)는 회사명이 아닙니다.
 - 하나의 명함 = 1개 레코드. 같은 명함을 분리하지 마세요.
 - 정보 없는 필드는 빈 문자열("").
@@ -2129,10 +2128,7 @@ function render(){
       <td style="font-size:12px;color:var(--sub)">${peopleName}</td>
       <td style="font-size:12px">${mobileP}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
-      <td contenteditable="true" class="editable" data-field="업종" data-id="${r.id}">${esc(r.업종)}${indChip}</td>
-      <td contenteditable="true" class="editable" data-field="기업형태" data-id="${r.id}">${esc(r.기업형태)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
-      <td contenteditable="true" class="editable" data-field="주소" data-id="${r.id}">${esc(r.주소)}</td>
       <td>${relH}</td>
       <td><span class="st ${stCls}">${stIcon} ${esc(r.status)}</span></td>
       <td style="white-space:nowrap">
@@ -2197,11 +2193,21 @@ function calcReliability(rec) {
   return "낮음";
 }
 
+/* 직능 분류어 패턴 — 담당자 필드에 들어오면 안 되는 단어들 */
+const ROLE_LABEL_RE = /총괄$|지원$|본부$|센터$|팀$|실$|부$|부문$|사업부$|^경영$|^영업$|^기획$|^마케팅$|^기술$/;
+
 function pushRecord(rec) {
   const dup = findDuplicate(rec);
   if (dup) {
     rec._dupOf = dup.id;
     console.log(`[중복감지] "${rec.회사명}" ← 기존 "${dup.회사명}" (${dup.id})`);
+  }
+  // ★ 직능 라벨 오분류 교정: 담당자가 사람 이름이 아닌 경우 담당직함으로 이동
+  if (rec.담당자 && ROLE_LABEL_RE.test(rec.담당자.trim())) {
+    console.log(`[직능교정] 담당자→담당직함 이동: "${rec.담당자}"`);
+    if (!rec.담당직함) rec.담당직함 = rec.담당자;
+    else rec.담당직함 = rec.담당자 + " / " + rec.담당직함;
+    rec.담당자 = "";
   }
   // 업종 자동 태깅 (빈 경우)
   if (!rec.업종)    rec.업종    = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
@@ -2862,8 +2868,8 @@ async function parseOcrTextWithAI(ocrText){
 
 [필드 정의]
 - "회사명": 법인/업체/기관의 공식 명칭. ㈜, (주), 주식회사 등이 포함됨. 번호 접두사(①②③, 1. 2. 등)는 제거할 것.
-- "담당자": 반드시 사람 이름(한글 2~4자 또는 영문 이름). 절대 라벨·부서·직함이 아님.
-- "담당직함": 직책/직위 (대표이사, 이사, 부장, 과장, 대리 등)
+- "담당자": 반드시 실제 사람의 성명(한글 2~4자 또는 영문 인명). 절대 라벨·부서·직함·직능분류가 아님.
+- "담당직함": 직책/직위 (대표이사, 이사, 전무, 부장, 과장, 대리 등) 및 직능 분류(경영총괄, 영업총괄 등)
 - "전화": 유선 전화번호 (02, 031, 1588 등으로 시작). "T.", "Tel", "전화" 라벨은 제외.
 - "휴대폰": 010/011/016/017/018/019로 시작하는 모바일 번호. +82-10은 010으로 변환. "M.", "Mobile", "HP" 라벨은 제외.
 - "이메일": @가 포함된 이메일 주소. "E.", "E-mail", "Email" 라벨은 제외.
@@ -2876,14 +2882,16 @@ async function parseOcrTextWithAI(ocrText){
 [반드시 지킬 규칙]
 1. "Mobile.", "M.", "HP", "H.P", "Tel", "T.", "F.", "Fax", "E-mail", "E.", "Email", "Product", "KOREA", "SCHOOL" 등은 필드 라벨이지 담당자가 아닙니다. 담당자에 절대 넣지 마세요.
 2. "사업부", "영업부", "기술부", "영업본부", "환기사업본부", "IAB", "Dnei", "CKG", "WE" 등 부서명·약어는 담당자가 아닙니다.
-3. "조달청 우수제품", "여성기업", "벤처기업", "우수디자인", "ISO", "CE", "KC인증" 등 인증/마크명은 회사명이 아닙니다.
-4. "대표이사", "이사", "COO", "CEO", "부장", "영업본부 | 이사" 등 직함·부서는 회사명이 아닙니다.
-5. 회사명 앞의 번호(①②③⑧, 1. 2. 3. 등)와 기호는 반드시 제거하세요.
-6. ★ 하나의 명함에는 보통 1개의 회사와 1명의 담당자가 있습니다. 같은 명함에 회사명이 여러 개 보여도(그룹사, 협력사, 인증기관 등) 주된 회사 1개만 회사명으로 하고 나머지는 무시하세요. 절대 같은 명함을 2개 레코드로 분리하지 마세요.
-7. ★ 동일한 회사명의 레코드가 중복되지 않도록 하세요. 같은 회사가 여러 번 나오면 정보를 병합하여 1건으로 만드세요.
-8. 정보가 없는 필드는 빈 문자열("")로 두세요. 추측하지 마세요.
-9. 여러 장의 명함이 포함된 리스트/테이블 이미지인 경우에만 여러 레코드를 반환하세요.
-10. "Eco solar", "CARETSTORE", "SCARETLINK" 등 영문 단어는 회사 영문명일 수 있으나, 사람 이름이 아니면 담당자에 넣지 마세요. 담당자는 반드시 한국인 이름(2~4자 한글) 또는 명백한 영문 인명만 해당됩니다.
+3. ★ "경영총괄", "영업총괄", "기획총괄", "마케팅총괄", "경영지원", "기술지원", "고객지원", "영업지원" 등 ~총괄/~지원/~본부/~센터로 끝나는 직능 분류어는 담당자가 아닙니다. 이런 단어는 담당직함에 넣으세요. 담당자는 그 아래 또는 옆에 있는 실제 사람 이름입니다.
+4. "조달청 우수제품", "여성기업", "벤처기업", "우수디자인", "ISO", "CE", "KC인증" 등 인증/마크명은 회사명이 아닙니다.
+5. "대표이사", "이사", "COO", "CEO", "부장", "영업본부 | 이사" 등 직함·부서는 회사명이 아닙니다.
+6. 회사명 앞의 번호(①②③⑧, 1. 2. 3. 등)와 기호는 반드시 제거하세요.
+7. ★ 하나의 명함에는 보통 1개의 회사와 1명의 담당자가 있습니다. 같은 명함에 회사명이 여러 개 보여도(그룹사, 협력사, 인증기관 등) 주된 회사 1개만 회사명으로 하고 나머지는 무시하세요. 절대 같은 명함을 2개 레코드로 분리하지 마세요.
+8. ★ 동일한 회사명의 레코드가 중복되지 않도록 하세요. 같은 회사가 여러 번 나오면 정보를 병합하여 1건으로 만드세요.
+9. 정보가 없는 필드는 빈 문자열("")로 두세요. 추측하지 마세요.
+10. 여러 장의 명함이 포함된 리스트/테이블 이미지인 경우에만 여러 레코드를 반환하세요.
+11. "Eco solar", "CARETSTORE", "SCARETLINK" 등 영문 단어는 회사 영문명일 수 있으나, 사람 이름이 아니면 담당자에 넣지 마세요. 담당자는 반드시 한국인 이름(2~4자 한글) 또는 명백한 영문 인명만 해당됩니다.
+12. ★ 담당자 판별법: 명함에서 이름 위에 "경영총괄", "영업총괄" 같은 직능 분류가 있고 그 아래 "홍길동 전무" 처럼 이름+직함이 있으면, 담당자="홍길동", 담당직함="전무 (경영총괄)"로 추출하세요.
 
 [OCR 텍스트]
 ${ocrText}
