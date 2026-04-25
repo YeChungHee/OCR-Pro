@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.3 — 다중 포맷 참가업체 수집 + 세일즈맵 API 연동</title>
+<title>OCR Pro v9.4 — 업체리스트 다포맷 처리 + 전시구역 섹션 태깅</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -172,7 +172,7 @@ td[contenteditable]:hover{background:var(--card2)}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.3</span>
+  <span class="ver">v9.4</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
 </div>
@@ -2940,6 +2940,28 @@ function extractInfoFromText(text){
   return {사업자번호:(bizNo||[])[0]||"",이메일:(emails||[])[0]||"",전화:(phones||[])[0]||"",웹주소:(urls||[])[0]||""};
 }
 
+/* ── 부스번호 없는 일반 텍스트 업체리스트 파서 ──
+   줄당 1개 업체명 형태: 2~40글자, 5줄 이상, 숫자/이메일/URL 아닌 줄이 대다수인 경우 */
+function parsePlainCompanyList(text){
+  const lines=text.split("\n").map(l=>l.trim()).filter(Boolean);
+  if(lines.length<5)return[];
+
+  // 업체명처럼 보이는 줄: 2~40글자, 숫자만은 아님, 이메일/URL/전화번호 아님, 부스번호 아님
+  const COMPANY_LINE_RE=/^(?!https?:\/\/)(?!\d{3}-\d{2}-\d{5})(?!\d{2,4}[-.\s]\d{3,4}[-.\s]\d{4})(?![A-Z]{1,3}\d{3,4}\s).{2,40}$/;
+  const NOT_COMPANY_RE=/^[\d\s,;|@]+$|[@]|http|fax|tel:|phone|email|주소:|address|부스번호/i;
+
+  const candidates=lines.filter(l=>COMPANY_LINE_RE.test(l)&&!NOT_COMPANY_RE.test(l));
+
+  // 전체 줄 대비 후보 비율이 60% 이상이어야 "목록" 판정
+  if(candidates.length<5||candidates.length/lines.length<0.6)return[];
+
+  // 중복 제거
+  const seen=new Set();
+  return candidates
+    .filter(l=>{if(seen.has(l))return false;seen.add(l);return true;})
+    .map(l=>({회사명:l}));
+}
+
 /* ═══════════════════════════════════════════════════
    스프레드시트 컬럼 자동 매핑
    ═══════════════════════════════════════════════════ */
@@ -3885,20 +3907,48 @@ async function processDocuments(files){
 
       }else if(ext==="pdf"){
         const ab=await f.arrayBuffer();
-        const pdf=await pdfjsLib.getDocument({data:ab}).promise;
-        const pages=[];
-        for(let p=1;p<=Math.min(pdf.numPages,20);p++){
-          const page=await pdf.getPage(p);
-          const tc=await page.getTextContent();
-          pages.push(tc.items.map(it=>it.str).join(" "));
+        if(!window.pdfjsLib){
+          const r=emptyRec("문서");r.회사명=`(${f.name}: pdf.js 미로드)`;r.status="오류";pushRecord(r);render();continue;
         }
-        const text=pages.join("\n");
+        const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+        // y좌표 기반 줄바꿈 복원 — parseStructuredExhibitorList()가 줄 구조를 필요로 함
+        let allText="";
+        for(let p=1;p<=pdf.numPages;p++){
+          const page=await pdf.getPage(p);
+          const content=await page.getTextContent();
+          let lastY=null;const lineTexts=[];
+          for(const item of content.items){
+            if(lastY!==null&&Math.abs(item.transform[5]-lastY)>5)lineTexts.push("\n");
+            lineTexts.push(item.str+(item.hasEOL?"\n":" "));
+            lastY=item.transform[5];
+          }
+          allText+=lineTexts.join("")+"\n\n";
+        }
 
-        if(!text.trim()){
+        if(!allText.trim()){
           const r=emptyRec("문서");r.회사명=`(${f.name}: 내용 없음)`;r.status="오류";pushRecord(r);render();continue;
         }
 
-        const info=extractInfoFromText(text);
+        // 구조화 업체리스트 감지 (부스번호+업체명 패턴)
+        const structured=parseStructuredExhibitorList(allText);
+        if(structured.length>=5){
+          const meta=detectExhibitionMeta(allText,f.name);
+          const prefix=meta.eventName?(meta.eventName+" "):"";
+          let added=0;
+          for(const comp of structured){
+            const r=emptyRec("문서");
+            r.회사명=comp.회사명;
+            r.부스번호=prefix+comp.부스번호+(comp._section?" ("+comp._section+")":"");
+            r.웹주소=comp.웹주소||"";r.이메일=comp.이메일||"";r.전화=comp.전화||"";
+            r.status="대기";
+            pushRecord(r);added++;
+          }
+          toast(`📄 ${f.name}: 업체리스트 ${added}개 추출 완료`+(meta.eventName?" ("+meta.eventName+")":""),"success");
+          render();continue;
+        }
+
+        // 구조화 패턴 미감지 → 단일 문서 처리 (기존)
+        const info=extractInfoFromText(allText);
         const r=emptyRec("문서");
         r.회사명=f.name.replace(/\.[^.]+$/,"");
         r.사업자번호=info.사업자번호;r.이메일=info.이메일;r.전화=info.전화;r.웹주소=info.웹주소;
@@ -3914,6 +3964,17 @@ async function processDocuments(files){
         }
 
         const lines=text.split("\n").filter(l=>l.trim());
+        // 부스번호 없는 업체명 목록 감지 (줄당 1개 업체명)
+        const plainList=parsePlainCompanyList(text);
+        if(plainList.length>=5){
+          let added=0;
+          for(const comp of plainList){
+            const r=emptyRec("문서");r.회사명=comp.회사명;r.status="대기";
+            pushRecord(r);added++;
+          }
+          toast(`📄 ${f.name}: 업체리스트 ${added}개 추출 완료`,"success");
+          render();continue;
+        }
         if(lines.length>1&&lines[0].includes(",")){
           const wb=XLSX.read(text,{type:"string"});
           const ws=wb.Sheets[wb.SheetNames[0]];
@@ -4602,6 +4663,54 @@ function detectInputFormat(url) {
   return 'html';
 }
 
+/* ── 전시회명/연도/섹션 메타데이터 감지 ── */
+function detectExhibitionMeta(text, filename) {
+  const meta = { eventName: '', year: '', sections: [] };
+
+  // 1. 파일명에서 전시회명+연도 추출 ("AW 2026 참가업체 리스트[국문].pdf" → "AW 2026")
+  if (filename) {
+    const fn = filename.replace(/\.[^.]+$/, '');
+    const m = fn.match(/^([A-Za-z가-힣\s\-\_]{2,20})\s+(20\d{2})/);
+    if (m) { meta.eventName = (m[1].trim() + ' ' + m[2]).trim(); meta.year = m[2]; }
+    else {
+      const m2 = fn.match(/(20\d{2})/);
+      if (m2) meta.year = m2[1];
+    }
+  }
+
+  // 2. 텍스트 상단 30줄에서 전시회명 감지
+  if (!meta.eventName) {
+    const topLines = text.split('\n').slice(0, 30).map(l => l.trim()).filter(Boolean);
+    for (const line of topLines) {
+      // "Exhibitor List\n[전시회명]" 패턴 또는 짧은 영문/한글 전시회명
+      if (/^Exhibitor\s+List$/i.test(line)) continue;
+      if (/^(부스번호|업체명)$/.test(line)) continue;
+      const mEvt = line.match(/^([A-Za-z가-힣][A-Za-z가-힣\s\-]+(?:\s+20\d{2})?)\s*$/);
+      if (mEvt && mEvt[1].length >= 3 && mEvt[1].length <= 40) {
+        meta.eventName = mEvt[1].trim();
+        const mY = mEvt[1].match(/(20\d{2})/);
+        if (mY) meta.year = mY[1];
+        break;
+      }
+    }
+  }
+
+  // 3. 섹션 헤더 패턴 감지 (3~40자 영/한 단독 줄, 부스번호 없이)
+  const SECTION_RE = /^([A-Za-z가-힣][A-Za-z가-힣0-9 \-\/]{2,38}(?:Zone|Pavilion|Expo|Show|aimex)?)$/;
+  const BOOTH_RE   = /^[A-Z]{1,3}\d{3,4}\s/;
+  const seenSec    = new Set();
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t || BOOTH_RE.test(t)) continue;
+    if (/^(부스번호|업체명|Exhibitor|Booth|List)$/i.test(t)) continue;
+    if (SECTION_RE.test(t) && t.length <= 60) {
+      if (!seenSec.has(t)) { seenSec.add(t); meta.sections.push(t); }
+    }
+  }
+
+  return meta;
+}
+
 /* ── 구조화 PDF 직접 파서 (부스번호+업체명 패턴 — COEX·KINTEX 등) ── */
 function parseStructuredExhibitorList(text) {
   // 부스번호 패턴: 영문자 1~3개 + 숫자 3~4자리 (A432, LB112, D338 등)
@@ -4609,10 +4718,26 @@ function parseStructuredExhibitorList(text) {
   const companies = [];
   const seen = new Set();
   const HEADER_RE = /^(부스번호|업체명|Exhibitor|Booth|NO\.?|Hall|List)$/i;
+  // 섹션 헤더: 부스번호 없이 단독으로 나오는 전시구역명
+  const SECTION_HEADER_RE = /^([A-Za-z가-힣][A-Za-z가-힣0-9 \-\/]{2,50})$/;
+  const BOOTH_RE = /^[A-Z]{1,3}\d{3,4}\s/;
+  let currentSection = '';
 
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    // 섹션 헤더 감지 (부스번호 없이 단독 줄 + 영/한 텍스트)
+    // "부스번호 업체명 ..." 같은 테이블 헤더 줄은 제외
+    const isTableHeader = /부스번호|업체명|Exhibitor\s+List|Booth\s+No/i.test(trimmed);
+    if (!BOOTH_RE.test(trimmed) && !HEADER_RE.test(trimmed) && !isTableHeader && SECTION_HEADER_RE.test(trimmed) && trimmed.length <= 50) {
+      // 지나치게 짧거나 숫자만인 줄은 제외, 최소 3자 이상 단어 포함
+      if (trimmed.length >= 3 && !/^\d+$/.test(trimmed) && /[A-Za-z가-힣]/.test(trimmed)) {
+        currentSection = trimmed;
+      }
+      continue;
+    }
+
     // lookbehind (?<=\s|^)으로 공백 뒤에서만 분할 → 'LB112' 같은 다중자 부스번호 보존
     const parts = trimmed.split(/(?<=\s)(?=[A-Z]{1,3}\d{3,4}\s)/);
     // 첫 파트도 부스번호 패턴으로 시작하면 포함
@@ -4628,6 +4753,7 @@ function parseStructuredExhibitorList(text) {
       seen.add(key);
       companies.push({
         회사명: name, 부스번호: booth,
+        _section: currentSection,
         전시품: '', 웹주소: '', 담당자: '', 전화: '', 이메일: '', 주소: '', 대표자: '',
       });
     }
