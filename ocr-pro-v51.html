@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.21 — 도메인 별칭 학습 엔진 (c-lab=씨랩)</title>
+<title>OCR Pro v9.22 — 데이터 유실 방지: 자동백업+복원+오버레이 보강</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.21</span>
+  <span class="ver">v9.22</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -618,6 +618,45 @@ let records=[], exportSeq=1;
 let pendingImages=[]; // 이미지 미리보기 대기 목록
 let pendingQR=[];     // QR코드 미리보기 대기 목록
 const $=s=>document.querySelector(s);
+
+/* ★ v9.22 — sessionStorage 자동 백업 / 복원 */
+function autoSave(){
+  try{
+    if(!records.length){sessionStorage.removeItem("ocrProBackup");return;}
+    /* thumb(base64 이미지)는 용량이 크므로 제외하고 저장 */
+    const slim=records.map(r=>{const{thumb,...rest}=r;return rest;});
+    sessionStorage.setItem("ocrProBackup",JSON.stringify({ts:Date.now(),cnt:slim.length,data:slim}));
+  }catch(e){console.warn("[autoSave] 실패:",e);}
+}
+function checkRestoreBackup(){
+  try{
+    const raw=sessionStorage.getItem("ocrProBackup");
+    if(!raw) return;
+    const {ts,cnt,data}=JSON.parse(raw);
+    if(!data||!data.length) return;
+    const age=Math.round((Date.now()-ts)/1000);
+    if(age>3600) return; /* 1시간 이상 경과 백업은 무시 */
+    const banner=document.createElement("div");
+    banner.id="restoreBanner";
+    banner.style.cssText="background:#fff8e1;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin:8px 0;display:flex;align-items:center;gap:10px;font-size:13px;color:#92400e";
+    banner.innerHTML=`<span>⚠️ 이전 세션 데이터 <strong>${cnt}건</strong>이 발견되었습니다.</span>
+      <button id="restoreYes" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:4px 12px;cursor:pointer;font-weight:700">복원</button>
+      <button id="restoreNo" style="background:transparent;border:1px solid #fbbf24;border-radius:6px;padding:4px 10px;cursor:pointer;color:#92400e">무시</button>`;
+    const tblWrap=document.getElementById("tblWrap");
+    if(tblWrap) tblWrap.parentNode.insertBefore(banner,tblWrap);
+    document.getElementById("restoreYes").onclick=()=>{
+      records=data.map(r=>({...r,thumb:""}));
+      banner.remove();
+      sessionStorage.removeItem("ocrProBackup");
+      render();
+      toast(`✅ ${cnt}건 복원 완료 (썸네일 제외)`,"success");
+    };
+    document.getElementById("restoreNo").onclick=()=>{
+      banner.remove();
+      sessionStorage.removeItem("ocrProBackup");
+    };
+  }catch(e){}
+}
 
 /* ═══════════════════════════════════════════════════
    토스트 알림
@@ -2280,19 +2319,30 @@ function render(){
         <button class="rm-btn" data-id="${r.id}" title="삭제">✕</button>
       </td>
     </tr>`}).join("");
+  /* ★ v9.22 자동 백업 (thumb 제외) */
+  autoSave();
 }
 
-/* 썸네일 확대 팝업 */
+/* 썸네일 확대 팝업 — v9.22: 클릭 통과 차단 + ESC 닫기 + 닫기 버튼 */
 function showThumb(recId) {
   const r = records.find(x => x.id === recId);
   if (!r || !r.thumb) return;
   const overlay = document.createElement("div");
-  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
-  overlay.onclick = () => overlay.remove();
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
+  const closeOverlay = (e) => { e.stopPropagation(); e.preventDefault(); overlay.remove(); document.removeEventListener("keydown", escHandler); };
+  overlay.addEventListener("click", closeOverlay);
   const img = document.createElement("img");
   img.src = r.thumb;
-  img.style.cssText = "max-width:90vw;max-height:88vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.4)";
+  img.style.cssText = "max-width:90vw;max-height:88vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.4);cursor:default";
+  img.addEventListener("click", e => e.stopPropagation()); /* 이미지 클릭이 오버레이로 버블 방지 */
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "✕";
+  closeBtn.style.cssText = "position:absolute;top:18px;right:22px;background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;z-index:100000";
+  closeBtn.addEventListener("click", closeOverlay);
+  const escHandler = (e) => { if(e.key==="Escape") closeOverlay(e); };
+  document.addEventListener("keydown", escHandler);
   overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
   document.body.appendChild(overlay);
 }
 
@@ -4959,7 +5009,11 @@ $("#tBody").onclick=e=>{
 // 액션 버튼
 $("#searchBtn").onclick=aiSearchAll;
 $("#exportBtn").onclick=exportExcel;
-$("#resetBtn").onclick=()=>{records=[];pendingImages=[];pendingQR=[];renderPreview();renderQRPreview();$("#ckAll").checked=false;render()};
+$("#resetBtn").onclick=()=>{
+  if(!confirm(`추출된 데이터 ${records.length}건을 모두 삭제합니다.\n계속하시겠습니까?`))return;
+  sessionStorage.removeItem("ocrProBackup");
+  records=[];pendingImages=[];pendingQR=[];renderPreview();renderQRPreview();$("#ckAll").checked=false;render();
+};
 
 // AI 검색 중지 버튼
 $("#aiSearchStop").onclick = () => {
@@ -6191,6 +6245,18 @@ function setExpoFile(file) {
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
   {
+    version: "v9.22",
+    date: "2026-04-25 23:00",
+    title: "데이터 유실 방지: 자동백업 + 복원 + 오버레이 보강",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "명함 썸네일 클릭 오버레이 보강: 이미지 클릭이 하위 요소로 버블되지 않도록 stopPropagation 적용, ESC 키 닫기 + 우상단 ✕ 닫기 버튼 추가" },
+      { type: "improve", text: "sessionStorage 자동 백업: render() 호출마다 추출 데이터를 자동 저장 (썸네일 제외). 페이지 새로고침 후 1시간 이내 데이터가 있으면 '복원' 배너 표시" },
+      { type: "fix",     text: "초기화 버튼 확인 단계 추가: '데이터 N건을 삭제합니다' confirm 다이얼로그로 실수 삭제 방지" }
+    ],
+    learnLog: []
+  },
+  {
     version: "v9.21",
     date: "2026-04-25 22:00",
     title: "도메인 별칭 학습 엔진 — c-lab=씨랩 패턴",
@@ -6642,6 +6708,9 @@ $("#settingsBtn").onclick = openSettings;
 
 // 시작 시 API Key 배너 확인
 checkApiKeyBanner();
+
+// ★ v9.22: 이전 세션 백업 복원 제안
+checkRestoreBackup();
 
 // API Key 미설정 시 설정창 자동 안내
 if (!getVisionKey() && !getGeminiKey()) {
