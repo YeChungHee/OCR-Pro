@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.34 — 전화 단편 병합 + 영문 브랜드명 오분류 차단</title>
+<title>OCR Pro v9.35 — 휴대폰 LAST RESORT 추출 + 전화 단편 병합</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.34</span>
+  <span class="ver">v9.35</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2674,7 +2674,7 @@ const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","M
   /* v9.27: 멀티워드 슬로건·제품명 조합 차단 */
   "SMART FACTORY","SMART FACTORY / SECURITY","VENTURO ENTERPRISE","SMART SECURITY",
   "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE",
-  /* v9.34: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
+  /* v9.35: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
   "LUMISERA","JINSUNGON","SHINWON","SHINHWA","HANATECH","HANARO","KOREATECH","KOREABIO"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
@@ -2917,6 +2917,9 @@ function classifyToken(t){
 function parseFullTextToRecords(fullText){
   if(!fullText||fullText.trim().length<10) return null;
 
+  /* ★ v9.35: 원본 텍스트 보존 — LAST RESORT 모바일 스캔에 사용 */
+  const _origFullText=fullText;
+
   /* ★ v9.23 전처리: 장식체 명함 "배\n준\n성" → 단독 1글자 한글 줄 연속 시 병합 */
   {
     const rawLines=fullText.split("\n");
@@ -2938,7 +2941,7 @@ function parseFullTextToRecords(fullText){
     fullText=merged.join("\n");
   }
 
-  /* ★ v9.34 전처리: Vision API 전화번호 단편 병합
+  /* ★ v9.35 전처리: Vision API 전화번호 단편 병합
      "Mobile\n010.\n2043.\n8373" 처럼 줄이 쪼개진 경우 재결합
      패턴1: 모바일 라벨 단독 줄 + 연속 숫자 단편 줄
      패턴2: "010." 등 전화 앞부분 단독 줄 + 연속 숫자 단편 줄 */
@@ -3340,6 +3343,28 @@ function parseFullTextToRecords(fullText){
       if(rec.담당자 && !rec.대표자){
         rec.대표자=rec.담당자;
         rec.담당자="";
+      }
+    }
+  }
+
+  /* ★ v9.35 LAST RESORT: 원본 전체 텍스트에서 휴대폰 직접 스캔
+     Vision API가 번호를 여러 줄로 분리하거나 전처리가 실패해도
+     줄바꿈을 공백으로 바꾼 후 극도로 너그러운 패턴으로 재시도 */
+  {
+    /* 줄바꿈 → 공백으로 평탄화 (분리된 단편들을 이어붙임) */
+    const flatText=_origFullText.replace(/\n/g," ");
+    /* Fax/FAX 앞에 오는 번호는 제외 처리 (Fax 라벨 뒤 번호 마스킹) */
+    const maskedText=flatText.replace(/(?:Fax|F)\s*[.:\-]\s*[\d.\s\-]{8,20}/gi,"");
+    /* 매우 너그러운 모바일 패턴: 구분자 최대 3자 허용 */
+    const LAST_MOB=/01[016789][\s.\-·]{0,3}\d{3,4}[\s.\-·]{0,3}\d{4}/g;
+    const mobMatches=maskedText.match(LAST_MOB)||[];
+    for(const rec of records){
+      if(!rec.휴대폰&&mobMatches.length){
+        const raw=mobMatches[0];
+        const clean=raw.replace(/[\s.\-·]/g,"");
+        const formatted=clean.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3");
+        rec.휴대폰=formatted;
+        console.log("[v9.35 LAST RESORT] 휴대폰 추출:",formatted,"← 원문:",raw);
       }
     }
   }
@@ -6648,12 +6673,22 @@ function setExpoFile(file) {
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
   {
+    version: "v9.35",
+    date: "2026-04-26 17:00",
+    title: "휴대폰 LAST RESORT 추출",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "LAST RESORT 모바일 스캔 추가 — 전처리·classifyToken을 통과하지 못한 경우에도 원본 전체 텍스트를 평탄화(줄바꿈→공백)한 뒤 매우 너그러운 패턴으로 010 번호를 최종 재추출. Vision API가 어떤 방식으로 줄을 쪼개도 확실히 잡음. Fax 번호는 사전 마스킹으로 오분류 방지" }
+    ],
+    learnLog: []
+  },
+  {
     version: "v9.34",
     date: "2026-04-26 16:30",
     title: "전화 단편 병합 + 영문 브랜드명 오분류 차단",
     dot: "fix",
     items: [
-      { type: "fix", text: "Vision API 전화번호 줄 분리 대응 — 'Mobile\\n010.\\n2043.\\n8373' 처럼 OCR이 전화번호를 여러 줄로 쪼갤 때 단편들을 재결합하는 전처리 추가 (v9.34 phone-fragment-merge)" },
+      { type: "fix", text: "Vision API 전화번호 줄 분리 대응 — 'Mobile\\n010.\\n2043.\\n8373' 처럼 OCR이 전화번호를 여러 줄로 쪼갤 때 단편들을 재결합하는 전처리 추가" },
       { type: "fix", text: "영문 브랜드명 대표자명 오분류 차단 — 'Lumisera' 등 회사 영문 브랜드명이 담당자→대표자로 오분류되던 문제 수정. SKIP_LABEL_SET에 영문 브랜드명 패턴 추가" }
     ],
     learnLog: []
