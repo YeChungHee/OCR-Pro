@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.22 — 데이터 유실 방지: 자동백업+복원+오버레이 보강</title>
+<title>OCR Pro v9.24 — 다중 명함 공간 분리 + 파서 강화</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.22</span>
+  <span class="ver">v9.24</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2566,6 +2566,80 @@ async function callGoogleVision(base64, _retry = 0){
 }
 
 /* ═══════════════════════════════════════════════════
+   ★ v9.24 — 다중 명함 사진 공간 분리 (2×2, 1×2, 2×1 등)
+   Vision API blocks의 bounding box를 분석해 카드 경계 감지
+   ═══════════════════════════════════════════════════ */
+function blockToText(block){
+  return (block.paragraphs||[]).map(para=>
+    (para.words||[]).map(w=>{
+      let word="";
+      for(const s of (w.symbols||[])){
+        word+=s.text||"";
+        const brk=s.property?.detectedBreak?.type||"";
+        if(brk==="SPACE"||brk==="SURE_SPACE") word+=" ";
+      }
+      return word.trim();
+    }).join(" ")
+  ).join("\n");
+}
+
+function splitBlocksToCards(blocks){
+  if(!blocks||blocks.length<6) return null; /* 블록 6개 미만이면 단일 카드로 간주 */
+  const infos=blocks.map(b=>{
+    const verts=b.boundingBox?.vertices||[];
+    if(verts.length<4) return null;
+    const xs=verts.map(v=>v.x||0), ys=verts.map(v=>v.y||0);
+    const minX=Math.min(...xs),maxX=Math.max(...xs);
+    const minY=Math.min(...ys),maxY=Math.max(...ys);
+    const text=blockToText(b);
+    return{minX,maxX,minY,maxY,cx:(minX+maxX)/2,cy:(minY+maxY)/2,text};
+  }).filter(Boolean);
+  if(!infos.length) return null;
+
+  const imgW=Math.max(...infos.map(b=>b.maxX));
+  const imgH=Math.max(...infos.map(b=>b.maxY));
+
+  /* y축 가장 큰 갭 찾기 (상/하 경계) */
+  const sortedY=[...infos].sort((a,b)=>a.cy-b.cy);
+  let maxYGap=0,yDiv=imgH/2;
+  for(let i=1;i<sortedY.length;i++){
+    const gap=sortedY[i].cy-sortedY[i-1].cy;
+    if(gap>maxYGap){maxYGap=gap;yDiv=(sortedY[i].cy+sortedY[i-1].cy)/2;}
+  }
+  /* x축 가장 큰 갭 찾기 (좌/우 경계) */
+  const sortedX=[...infos].sort((a,b)=>a.cx-b.cx);
+  let maxXGap=0,xDiv=imgW/2;
+  for(let i=1;i<sortedX.length;i++){
+    const gap=sortedX[i].cx-sortedX[i-1].cx;
+    if(gap>maxXGap){maxXGap=gap;xDiv=(sortedX[i].cx+sortedX[i-1].cx)/2;}
+  }
+
+  /* 의미 있는 갭인지 확인 (이미지 크기의 7% 이상) */
+  const doY=maxYGap>imgH*0.07;
+  const doX=maxXGap>imgW*0.07;
+  if(!doY&&!doX) return null;
+
+  /* 블록을 사분면에 배치 */
+  const quads={TL:[],TR:[],BL:[],BR:[]};
+  for(const b of infos){
+    const top=!doY||b.cy<yDiv;
+    const left=!doX||b.cx<xDiv;
+    quads[(top?"T":"B")+(left?"L":"R")].push(b);
+  }
+
+  /* 읽기 순서: 좌상→우상→좌하→우하, 각 사분면 내부는 y→x 정렬 */
+  const result=[];
+  for(const q of["TL","TR","BL","BR"]){
+    if(!quads[q].length) continue;
+    quads[q].sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
+    const txt=quads[q].map(b=>b.text).join("\n").trim();
+    if(txt) result.push(txt);
+  }
+  console.log(`[MultiCard] 감지: doY=${doY}(갭${Math.round(maxYGap)}) doX=${doX}(갭${Math.round(maxXGap)}) → ${result.length}장`);
+  return result.length>1?result:null;
+}
+
+/* ═══════════════════════════════════════════════════
    Vision fullText 기반 테이블 파싱 v3
    — fullTextAnnotation.text를 줄 단위로 분석
    — 업종 우선 분류, 레코드 경계=회사명 중복 기반
@@ -2576,6 +2650,8 @@ const INDUSTRY_SET=new Set(["제조","도소매","건설","서비스","IT","운�
 
 /* 직함 패턴 */
 const TITLE_PATTERN=/^(?:대표이사|대표|부사장|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|본부장|센터장|원장장?|수석|선임|교장|교감|교수|학과장|학장|창업기술원장|총장|사무국장|사무총장|국장|처장|소장|연구원|위원장?|회장|부회장|총무|간사|기술이사|감사|고문|자문|디자인이사|선임연구원|책임연구원|수석연구원|선임기술원|책임기술원|기술영업이사|영업이사|전략이사|사업이사|운영이사|기술이사장|상임이사|비상임이사|이사대우|부이사장|영업본부장|사업본부장|전략본부장|Account\s*Director|Head\s*of\s*Operations|Chief\s*Executive|Founder|Co-Founder|FOUNDER)$/;
+const EN_TITLE_LINE_RE=/^(?:(?:Chief|Senior|Junior|Lead|Principal|Managing|Executive|Associate|Assistant|Regional|Global|Business|Sales|Marketing|Product|Project|Operations|Operation|Account|Technical|Research|Design|Strategy|General|Commercial|Finance|Financial|Customer|People|HR|Human|Resources)\s+)*(?:Director|Manager|Officer|Engineer|Consultant|Specialist|Representative|President|Founder|Co-?Founder|Partner|Advisor|Chair(?:man|person)?|Supervisor|Analyst|Coordinator|Executive|CEO|CTO|CFO|COO|CMO|CSO|VP|SVP|EVP)\b(?:\s+of\s+[A-Z][A-Za-z&/-]+(?:\s+[A-Z][A-Za-z&/-]+)*)?$/i;
+const EN_NAME_LINE_RE=/^[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?(?:\s+[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?){1,2}$/;
 
 /* 주소 시작 패턴 */
 const ADDR_PREFIX=/^(?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원도|충청북도|충청남도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)/;
@@ -2602,7 +2678,9 @@ function isHeaderLine(line){
 const CERT_LABEL_SET=new Set(["KS","KG","KC","CE","ISO","GS","GR","EM","IR","NET","SH","SD","UL","TUV","SGS","INNOBIZ","MAINBIZ","NEP","NET","NT","NP","GMP","HACCP","HALAL","FDA","FCC","CB","CCC","PSE","JIS","BIS","KOLAS","KAS","KOSHA","OHSAS","EAC"]);
 const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","MOBILE","HP","WEBHARD","ID","PW","P/W","E-MAIL","EMAIL","PRODUCT","KOREA","SCHOOL","KS D","D","HRD","SHINHWA","WWW","HTTP","HTTPS",
   /* 영문 일반단어 — 담당자 오분류 방지 (Medical, Digital 등) */
-  "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION"]);
+  "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION",
+  /* v9.23 추가 — 건설·제조·인증 뱃지·영문브랜드 오분류 차단 */
+  "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
   /* P-3 지점/본사 오분류 방지 */
@@ -2628,6 +2706,8 @@ function classifyToken(t){
   if(/^(?:KakaoTalk|WeChat|Line|Instagram|LinkedIn)\s*ID$/i.test(t)) return null;
   /* ★ P-10: 이미지 파일명 패턴 (IMG_2856, IMG_2856 2 등) → 스킵 */
   if(/^IMG_\d+(\s+\d+)?$/i.test(t)) return null;
+  /* ★ P-12: 회사 suffix 단독 토큰 (Co., Ltd. / Co.Ltd / Construction Co.Ltd 등) → 스킵 */
+  if(/^(?:[A-Z][\w&]+\s+)*(?:Co\.?,?\s*Ltd\.?|Co\.,\s*Ltd\.|Inc\.?|Corp\.?|LLP|LLC\.?)$/i.test(t)) return null;
 
   /* 1. 사업자번호 */
   if(/\d{3}-\d{2}-\d{5}/.test(t)) return {field:"사업자번호",value:t.match(/\d{3}-\d{2}-\d{5}/)[0]};
@@ -2673,6 +2753,7 @@ function classifyToken(t){
 
   /* 10. 직함 */
   if(TITLE_PATTERN.test(t)) return {field:"담당직함",value:t};
+  if(EN_TITLE_LINE_RE.test(t)) return {field:"담당직함",value:t};
 
   /* 10-b. ★ 직능 분류어 (경영총괄, 영업총괄 등) → 담당자 오분류 방지, 담당직함으로 */
   if(ROLE_LABEL_RE.test(t)) return {field:"담당직함",value:t};
@@ -2682,12 +2763,7 @@ function classifyToken(t){
 
   /* 11-b. 영문 이름 패턴 (First Last, 단일 영문 이름 등) */
   if(/^[A-Z][a-z]{1,15}$/.test(t)) return {field:"담당자",value:t};
-  /* 두 단어 영문명: 각 단어가 SKIP_LABEL_SET에 있으면 비이름 → null (Solution System, Medical Group 등) */
-  if(/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(t)){
-    const words=t.split(" ");
-    if(words.some(w=>SKIP_LABEL_SET.has(w.toUpperCase()))) return null;
-    return {field:"담당자",value:t};
-  }
+  if(EN_NAME_LINE_RE.test(t)) return {field:"담당자",value:t};
   if(/^[A-Z][a-z]+[-][A-Z][a-z]+$/.test(t)) return {field:"담당자",value:t};
 
   /* 12. 숫자+하이픈 짧은 것 → 스킵 */
@@ -2702,6 +2778,27 @@ function classifyToken(t){
 /* fullText에서 레코드 추출 — 핵심 로직 v3 */
 function parseFullTextToRecords(fullText){
   if(!fullText||fullText.trim().length<10) return null;
+
+  /* ★ v9.23 전처리: 장식체 명함 "배\n준\n성" → 단독 1글자 한글 줄 연속 시 병합 */
+  {
+    const rawLines=fullText.split("\n");
+    const merged=[];
+    let buf="";
+    for(const ln of rawLines){
+      const t=ln.trim();
+      if(/^[가-힣]$/.test(t)){
+        buf+=t;
+        if(buf.length>=4){merged.push(buf);buf="";}
+      }else{
+        if(buf.length>=2){merged.push(buf);buf="";}
+        else if(buf.length===1){merged.push(buf);buf="";}
+        merged.push(ln);
+      }
+    }
+    if(buf.length>=2) merged.push(buf);
+    else if(buf) merged.push(buf);
+    fullText=merged.join("\n");
+  }
 
   const lines=fullText.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
   if(lines.length<3) return null;
@@ -3052,12 +3149,12 @@ function guessTextField(val,curRec){
   /* 슬래시 2개 이상 → 업종(제품목록) */
   if((val.match(/\//g)||[]).length>=2&&!curRec.업종) return "업종";
   /* ★ 영문 직함 패턴: Head of / Director of / Chief ... Officer 등 → 담당직함 (P-11) */
-  if(/^(?:Head|Director|Manager|VP|SVP|EVP|Chief|Officer|President|Founder|Co-?Founder|Partner|Associate|Principal|Advisor)\b.{3,}/i.test(val)&&val.length>=8){
+  if(EN_TITLE_LINE_RE.test(val)&&val.length>=8){
     if(!curRec.담당직함) return "담당직함";
     return "_skip";
   }
   /* 영문 이름 패턴이면 담당자로 배정 — 단, 5자 이상 + 소문자 포함 (약어 배제) */
-  if(/^[A-Za-z][-A-Za-z.\s]{4,25}$/.test(val)&&/[a-z]/.test(val)){
+  if(EN_NAME_LINE_RE.test(val) || (/^[A-Za-z][-A-Za-z.\s]{4,25}$/.test(val)&&/[a-z]/.test(val))){
     if(!curRec.담당자) return "담당자";
     return "_skip";
   }
@@ -3227,6 +3324,31 @@ function parseBusinessCard(text){
           break;
         }
       }
+    }
+  }
+
+  /* 영문명/영문직함 폴백 — Gemini 비가용 또는 AI 파싱 실패 시 사용 */
+  for(const rawLine of lines){
+    const line=rawLine.replace(/\s+/g,' ').trim();
+    if(!line) continue;
+    const nameFirst=line.match(/^([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,2})\s*(?:[|/,-]|·)\s*([A-Za-z][A-Za-z &/'-]{3,40})$/);
+    if(nameFirst && EN_TITLE_LINE_RE.test(nameFirst[2].trim())){
+      if(!result.담당자) result.담당자=nameFirst[1].trim();
+      if(!result.담당직함) result.담당직함=nameFirst[2].trim();
+      continue;
+    }
+    const titleFirst=line.match(/^([A-Za-z][A-Za-z &/'-]{3,40})\s*(?:[|/,-]|·)\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,2})$/);
+    if(titleFirst && EN_TITLE_LINE_RE.test(titleFirst[1].trim())){
+      if(!result.담당직함) result.담당직함=titleFirst[1].trim();
+      if(!result.담당자) result.담당자=titleFirst[2].trim();
+      continue;
+    }
+    if(!result.담당직함 && EN_TITLE_LINE_RE.test(line)){
+      result.담당직함=line;
+      continue;
+    }
+    if(!result.담당자 && EN_NAME_LINE_RE.test(line) && !EN_TITLE_LINE_RE.test(line)){
+      result.담당자=line;
     }
   }
 
@@ -3973,7 +4095,8 @@ async function confirmImages(){
   progress.classList.remove("hidden");
   $("#ocrBar").style.width="0%";
 
-  const useVision=!!GCLOUD_API_KEY;
+  const useVision=!!getVisionKey();
+  const useGemini=!!getGeminiKey();
   if(useVision){
     $("#ocrStatus").textContent="Google Vision API로 OCR 처리 중...";
   }else{
@@ -3990,10 +4113,16 @@ async function confirmImages(){
     $("#ocrStatus").textContent=`[${i+1}/${pendingImages.length}] ${p.name} 분석 중...`;
 
     try{
+      let imageDataUrl=p.dataUrl;
+      if(isHeicFile(p.name)&&!useGemini&&p.blob){
+        $("#ocrStatus").textContent=`[${i+1}/${pendingImages.length}] ${p.name} HEIC 변환 중...`;
+        imageDataUrl=await convertBlobToJpegDataUrl(p.blob);
+      }
+
       /* (v7.1) QR 스캔은 QR 탭에서 별도 처리 — 이미지 탭은 OCR 전용 */
 
       /* ★ HEIC 파일 → Gemini Vision 멀티모달로 직접 OCR+파싱 (변환 불필요) */
-      if(isHeicFile(p.name) && GCLOUD_API_KEY){
+      if(isHeicFile(p.name) && useGemini){
         $("#ocrStatus").textContent=`[${i+1}/${pendingImages.length}] ${p.name} Gemini Vision 분석 중...`;
         const base64=dataUrlToBase64(p.dataUrl);
         /* HEIC MIME 타입 보정: 일부 브라우저가 application/octet-stream으로 인식할 수 있음 */
@@ -4040,13 +4169,52 @@ async function confirmImages(){
         }
       }else if(useVision){
         // ★ 일반 이미지 → Google Vision API + AI 파싱
-        const base64=dataUrlToBase64(p.dataUrl);
+        const base64=dataUrlToBase64(imageDataUrl);
         const visionRes=await callGoogleVision(base64);
+
+        /* ★ v9.24 다중 명함 감지: Vision blocks → 공간 분리 → 카드별 독립 파싱 */
+        const _blocks=visionRes.fullTextAnnotation?.pages?.[0]?.blocks;
+        const _cardTexts=splitBlocksToCards(_blocks);
+        if(_cardTexts&&_cardTexts.length>1){
+          let multiCount=0;
+          for(const _ct of _cardTexts){
+            if(!_ct.trim()) continue;
+            /* 각 카드 텍스트에 대해 Vision v3 파서 적용 */
+            const _recs=parseFullTextToRecords(_ct);
+            if(_recs&&_recs.length){
+              for(const _parsed of _recs){
+                const _r=emptyRec("이미지");
+                _r.thumb=p.dataUrl;
+                _r.회사명=_parsed.회사명||"";
+                _r.영문명=_parsed.영문명||"";
+                _r.담당자=_parsed.담당자||"";
+                _r.담당직함=_parsed.담당직함||"";
+                _r.전화=_parsed.전화||"";
+                _r.휴대폰=_parsed.휴대폰||"";
+                _r.이메일=_parsed.이메일||"";
+                _r.사업자번호=_parsed.사업자번호||"";
+                _r.대표자=_parsed.대표자||"";
+                _r.주소=_parsed.주소||"";
+                _r.웹주소=_parsed.웹주소||"";
+                _r.업종=_parsed.업종||"";
+                _r.status="완료";
+                pushRecord(_r);
+                multiCount++;
+              }
+            }
+          }
+          if(multiCount>0){
+            successCount++;
+            toast(`📦 ${_cardTexts.length}장 분리 → ${multiCount}건 추출`,"success");
+            continue; /* 단건 파싱 패스 건너뜀 */
+          }
+        }
+
         const ocrFullText=parseVisionText(visionRes);
 
         /* ★ 항상 AI 파싱을 우선 시도 (테이블/단건 구분 없이) */
         let aiResults=null;
-        if(GCLOUD_API_KEY && ocrFullText.trim().length>=10){
+        if(useGemini && ocrFullText.trim().length>=10){
           try{
             $("#ocrStatus").textContent=`[${i+1}/${pendingImages.length}] ${p.name} AI 분석 중...`;
             aiResults=await parseOcrTextWithAI(ocrFullText);
@@ -4177,7 +4345,7 @@ async function confirmImages(){
             }
           });
         }
-        const {data}=await worker.recognize(p.dataUrl);
+        const {data}=await worker.recognize(imageDataUrl);
         const text=data.text||"";
         const parsed=parseBusinessCard(text);
         const r=emptyRec("이미지");
@@ -6244,6 +6412,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.24",
+    date: "2026-04-26 02:00",
+    title: "다중 명함 공간 분리 + 파서 강화 (Phase 1+2)",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "Phase 2: splitBlocksToCards() 신설 — Vision API blocks bounding box를 분석해 2×2/1×2/2×1 배치 자동 감지, 카드별 독립 파싱으로 4장 사진 → 4건 추출 가능" },
+      { type: "fix",     text: "Phase 1: SKIP_LABEL_SET 확장 — CONSTRUCTION, VENTURE, VENTURO, SMART, FACTORY, SECURITY, DAVID, HION 등 추가로 건설·제조사 영문명 오분류 차단" },
+      { type: "fix",     text: "Phase 1: 장식체 명함 대응 — '배\\n준\\n성' 형식 연속 1글자 한글 줄 → 자동 병합 ('배준성')" },
+      { type: "fix",     text: "Phase 1: Co., Ltd. 복합 suffix 토큰 → null 반환 (J&Y Construction Co.Ltd → 대표자 오분류 차단)" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.22",
     date: "2026-04-25 23:00",
