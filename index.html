@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.25 — 다중 명함 파서 오류 수정 6종</title>
+<title>OCR Pro v9.26 — CEO 대표자 추출 + 한영이름 3단어 수정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.25</span>
+  <span class="ver">v9.26</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2903,16 +2903,18 @@ function parseFullTextToRecords(fullText){
         console.log(`[괄호이름] "${p}" → 담당자="${parenNameMatch[1]}"`);
         continue;
       }
-      /* ★ P-3: 직함역순 "이사 이종원" → 담당직함 + 담당자 분리 */
-      const revTitleMatch=p.match(/^(대표이사|대표|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|팀장|실장|본부장|센터장|이사장|감사|수석|선임|사장|상무)\s+([가-힣]{2,4})$/);
+      /* ★ P-3: 직함역순 "이사 이종원" / "CEO 한상천" → 담당직함 + 담당자 분리
+         영문 경영자 직함 포함 (CEO, CTO, CFO, COO, 원장, 사장 등) */
+      const revTitleMatch=p.match(/^(대표이사|대표|사장|회장|원장|총장|소장|이사장|공동대표|각자대표|CEO|CTO|CFO|COO|CMO|CSO|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|팀장|실장|본부장|센터장|감사|수석|선임|상무)\s+([가-힣]{2,4})$/);
       if(revTitleMatch){
         tokens.push({field:"담당직함",value:revTitleMatch[1]});
         tokens.push({field:"담당자",value:revTitleMatch[2]});
         console.log(`[직함역순] "${p}" → 담당직함="${revTitleMatch[1]}" + 담당자="${revTitleMatch[2]}"`);
         continue;
       }
-      /* ★ P-2: 공백형 한글→영문 병기 "도영훈 Yeong-Hun Do" → 한글 이름만 담당자로 */
-      const koEnNameMatch=p.match(/^([가-힣]{2,4})\s+([A-Z][a-zA-Z\-]+(?:\s+[A-Z][a-zA-Z]+)?)$/);
+      /* ★ P-2: 공백형 한글→영문 병기 "도영훈 Yeong-Hun Do" / "정진호 Jung Jin Ho" → 한글 이름만 담당자로
+         영문 이름부: 최대 4단어까지 허용 (First Middle Last + 4th word) */
+      const koEnNameMatch=p.match(/^([가-힣]{2,4})\s+([A-Z][a-zA-Z\-]+(?:\s+[A-Z][a-zA-Z\-]+){0,3})$/);
       if(koEnNameMatch&&!NON_NAME_KO.has(koEnNameMatch[1])&&!ROLE_LABEL_RE.test(koEnNameMatch[1])&&!TITLE_PATTERN.test(koEnNameMatch[1])){
         tokens.push({field:"담당자",value:koEnNameMatch[1]});
         console.log(`[한영이름] "${p}" → 담당자="${koEnNameMatch[1]}"`);
@@ -3135,12 +3137,17 @@ function parseFullTextToRecords(fullText){
     }
   }
 
-  /* ★ Fix6 v9.25: 이름이 직함보다 먼저 나온 역순 패턴 사후 처리
-     예) 이경숙\n대표이사 → 담당직함=대표이사, 담당자=이경숙 → 대표자=이경숙 */
+  /* ★ Fix6 v9.26: 경영자 직함 보유자 → 담당자 → 대표자 이동
+     isCeoTitle() 기준으로 확장: 대표이사·대표·사장·회장·원장·CEO·CTO 등 모두 처리
+     예) 이경숙\n대표이사, 진영매\n대표, 한상천\nCEO 등 */
   for(const rec of records){
-    if(/^대표(이사)?$/.test((rec.담당직함||"").trim()) && rec.담당자 && !rec.대표자){
-      rec.대표자=rec.담당자;
-      rec.담당자="";
+    if(typeof isCeoTitle==="function"
+        ? isCeoTitle(rec.담당직함)
+        : /^(대표이사|대표|사장|회장|총장|원장|소장|이사장|CEO|CTO|CFO|COO|CMO|CSO|공동대표|각자대표)$/i.test((rec.담당직함||"").trim())){
+      if(rec.담당자 && !rec.대표자){
+        rec.대표자=rec.담당자;
+        rec.담당자="";
+      }
     }
   }
 
@@ -6442,6 +6449,18 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.26",
+    date: "2026-04-26 05:30",
+    title: "CEO 대표자명 추출 강화 + 한영병기 3단어 이름 수정",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "Fix A: Fix6 경영자 직함 확장 — isCeoTitle() 기준으로 전체 교체 (대표이사·대표·사장·회장·원장·CEO·CTO·CFO 등). 직함 보유자 이름이 담당자 대신 대표자 필드에 정확히 배정됨" },
+      { type: "fix",     text: "Fix B: 한영 3단어 이름 정상 처리 — koEnNameMatch 정규식 영문부 최대 4단어로 확장. '정진호 Jung Jin Ho' 등 3단어 영문 이름이 회사명 오분류되던 문제 수정" },
+      { type: "fix",     text: "Fix C: revTitleMatch(P-3) 경영자 직함 확장 — '사장', '회장', '원장', '이사장', 'CEO', 'CTO', 'CFO' 등 추가. '사장 홍길동' 역순 패턴도 직함+담당자로 분리" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.25",
     date: "2026-04-26 04:00",
