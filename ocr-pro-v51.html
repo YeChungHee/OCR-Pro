@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.33 — 010 번호 추출 강화 + 한글 이름 공백 보정</title>
+<title>OCR Pro v9.34 — 전화 단편 병합 + 영문 브랜드명 오분류 차단</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.33</span>
+  <span class="ver">v9.34</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2673,7 +2673,9 @@ const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","M
   "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE",
   /* v9.27: 멀티워드 슬로건·제품명 조합 차단 */
   "SMART FACTORY","SMART FACTORY / SECURITY","VENTURO ENTERPRISE","SMART SECURITY",
-  "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE"]);
+  "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE",
+  /* v9.34: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
+  "LUMISERA","JINSUNGON","SHINWON","SHINHWA","HANATECH","HANARO","KOREATECH","KOREABIO"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
   /* P-3 지점/본사 오분류 방지 */
@@ -2934,6 +2936,54 @@ function parseFullTextToRecords(fullText){
     if(buf.length>=2) merged.push(buf);
     else if(buf) merged.push(buf);
     fullText=merged.join("\n");
+  }
+
+  /* ★ v9.34 전처리: Vision API 전화번호 단편 병합
+     "Mobile\n010.\n2043.\n8373" 처럼 줄이 쪼개진 경우 재결합
+     패턴1: 모바일 라벨 단독 줄 + 연속 숫자 단편 줄
+     패턴2: "010." 등 전화 앞부분 단독 줄 + 연속 숫자 단편 줄 */
+  {
+    const pfLines=fullText.split("\n");
+    const pfMerged=[];
+    let pi=0;
+    while(pi<pfLines.length){
+      const ln=pfLines[pi].trim();
+      /* 패턴1: 모바일 라벨 단독 줄 (Mobile, HP, C.P 등) */
+      const isMobLabel=/^(?:Mobile|M\.|HP|H\.P|Dir|Direct|C\.P|PON)$/i.test(ln);
+      if(isMobLabel&&pi+1<pfLines.length){
+        const parts=[ln];
+        let pj=pi+1;
+        while(pj<pfLines.length&&pj<pi+5){
+          const nxt=pfLines[pj].trim();
+          if(/^[\d.\-\s+]+$/.test(nxt)&&nxt.length<=8){parts.push(nxt);pj++;}
+          else break;
+        }
+        if(parts.length>1){
+          const joined=parts.join(" ");
+          const clean=joined.replace(/[\s\-.()+]/g,"");
+          if(/0(10|11|16|17|18|19)\d{7,8}/.test(clean)||/8210\d{7,8}/.test(clean)){
+            pfMerged.push(joined);pi=pj;continue;
+          }
+        }
+      }
+      /* 패턴2: 전화번호 앞부분 단독 줄 ("010.", "010-" 등) */
+      if(/^01[016789][.\-\s]?$/.test(ln)&&pi+1<pfLines.length){
+        const parts=[ln];
+        let pj=pi+1;
+        while(pj<pfLines.length&&pj<pi+4){
+          const nxt=pfLines[pj].trim();
+          if(/^[\d.\-\s]+$/.test(nxt)&&nxt.length<=6){parts.push(nxt);pj++;}
+          else break;
+        }
+        const joined=parts.join(" ");
+        const clean=joined.replace(/[\s\-.()+]/g,"");
+        if(/01[016789]\d{7,8}/.test(clean)){
+          pfMerged.push(joined);pi=pj;continue;
+        }
+      }
+      pfMerged.push(pfLines[pi]);pi++;
+    }
+    fullText=pfMerged.join("\n");
   }
 
   const lines=fullText.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
@@ -6597,6 +6647,17 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.34",
+    date: "2026-04-26 16:30",
+    title: "전화 단편 병합 + 영문 브랜드명 오분류 차단",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "Vision API 전화번호 줄 분리 대응 — 'Mobile\\n010.\\n2043.\\n8373' 처럼 OCR이 전화번호를 여러 줄로 쪼갤 때 단편들을 재결합하는 전처리 추가 (v9.34 phone-fragment-merge)" },
+      { type: "fix", text: "영문 브랜드명 대표자명 오분류 차단 — 'Lumisera' 등 회사 영문 브랜드명이 담당자→대표자로 오분류되던 문제 수정. SKIP_LABEL_SET에 영문 브랜드명 패턴 추가" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.33",
     date: "2026-04-26 15:00",
