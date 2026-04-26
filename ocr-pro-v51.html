@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.35 — 휴대폰 LAST RESORT 추출 + 전화 단편 병합</title>
+<title>OCR Pro v9.36 — 쉼표 구분자 전화번호 인식 + AI 경로 휴대폰 보강</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.35</span>
+  <span class="ver">v9.36</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2674,7 +2674,7 @@ const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","M
   /* v9.27: 멀티워드 슬로건·제품명 조합 차단 */
   "SMART FACTORY","SMART FACTORY / SECURITY","VENTURO ENTERPRISE","SMART SECURITY",
   "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE",
-  /* v9.35: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
+  /* v9.36: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
   "LUMISERA","JINSUNGON","SHINWON","SHINHWA","HANATECH","HANARO","KOREATECH","KOREABIO"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
@@ -2853,12 +2853,16 @@ function classifyToken(t){
   /* 2. 이메일 (@@오타는 전처리에서 이미 보정됨, 이미지·JS 파일명 제외) */
   { const em = extractEmailSafe(t); if (em) return {field:"이메일", value:em}; }
 
-  /* 3. 휴대폰 (+82-10 → 010 변환 포함) — ★v9.33: [-.\s]{0,2} 다중구분자 허용 ("010. 2043. 8373" 형태 처리) */
-  if(/\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/.test(t)){
-    const m=t.match(/\+?82[-.\s]{0,2}(10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4})/);
-    return {field:"휴대폰",value:"0"+m[1].replace(/[-.\s]/g,"").replace(/^(\d{2,3})(\d{3,4})(\d{4})$/,"$1-$2-$3")};
+  /* 3. 휴대폰 (+82-10 → 010 변환 포함) — ★v9.36: [,.\-\s]{0,2} 쉼표 구분자 추가 ("010, 2043. 8373" 형태 처리) */
+  if(/\+?82[,.\-\s]{0,2}10[,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/.test(t)){
+    const m=t.match(/\+?82[,.\-\s]{0,2}(10[,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4})/);
+    return {field:"휴대폰",value:"0"+m[1].replace(/[,.\-\s]/g,"").replace(/^(\d{2,3})(\d{3,4})(\d{4})$/,"$1-$2-$3")};
   }
-  if(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/.test(t)) return {field:"휴대폰",value:t.match(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/)[0]};
+  if(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/.test(t)){
+    const _raw=t.match(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/)[0];
+    const _clean=_raw.replace(/[,.\-\s]/g,"");
+    return {field:"휴대폰",value:_clean.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3")};
+  }
 
   /* 4. 일반전화 (1588 등 대표번호 포함, 괄호 포맷 041)742-9445 포함) */
   if(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/.test(t)) return {field:"전화",value:t.match(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/)[0]};
@@ -2917,7 +2921,7 @@ function classifyToken(t){
 function parseFullTextToRecords(fullText){
   if(!fullText||fullText.trim().length<10) return null;
 
-  /* ★ v9.35: 원본 텍스트 보존 — LAST RESORT 모바일 스캔에 사용 */
+  /* ★ v9.36: 원본 텍스트 보존 — LAST RESORT 모바일 스캔에 사용 */
   const _origFullText=fullText;
 
   /* ★ v9.23 전처리: 장식체 명함 "배\n준\n성" → 단독 1글자 한글 줄 연속 시 병합 */
@@ -2941,7 +2945,7 @@ function parseFullTextToRecords(fullText){
     fullText=merged.join("\n");
   }
 
-  /* ★ v9.35 전처리: Vision API 전화번호 단편 병합
+  /* ★ v9.36 전처리: Vision API 전화번호 단편 병합
      "Mobile\n010.\n2043.\n8373" 처럼 줄이 쪼개진 경우 재결합
      패턴1: 모바일 라벨 단독 줄 + 연속 숫자 단편 줄
      패턴2: "010." 등 전화 앞부분 단독 줄 + 연속 숫자 단편 줄 */
@@ -3063,8 +3067,8 @@ function parseFullTextToRecords(fullText){
         processLine=processLine.replace(em," "+em+" ");
       }
     }
-    /* 전화번호가 텍스트에 붙은 경우 — ★v9.33: 다중구분자 허용 */
-    const embeddedPhone=processLine.match(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/g);
+    /* 전화번호가 텍스트에 붙은 경우 — ★v9.36: 쉼표 구분자 추가 */
+    const embeddedPhone=processLine.match(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/g);
     if(embeddedPhone){
       for(const ph of embeddedPhone){
         processLine=processLine.replace(ph," "+ph+" ");
@@ -3347,7 +3351,7 @@ function parseFullTextToRecords(fullText){
     }
   }
 
-  /* ★ v9.35 LAST RESORT: 원본 전체 텍스트에서 휴대폰 직접 스캔
+  /* ★ v9.36 LAST RESORT: 원본 전체 텍스트에서 휴대폰 직접 스캔
      Vision API가 번호를 여러 줄로 분리하거나 전처리가 실패해도
      줄바꿈을 공백으로 바꾼 후 극도로 너그러운 패턴으로 재시도 */
   {
@@ -3355,8 +3359,8 @@ function parseFullTextToRecords(fullText){
     const flatText=_origFullText.replace(/\n/g," ");
     /* Fax/FAX 앞에 오는 번호는 제외 처리 (Fax 라벨 뒤 번호 마스킹) */
     const maskedText=flatText.replace(/(?:Fax|F)\s*[.:\-]\s*[\d.\s\-]{8,20}/gi,"");
-    /* 매우 너그러운 모바일 패턴: 구분자 최대 3자 허용 */
-    const LAST_MOB=/01[016789][\s.\-·]{0,3}\d{3,4}[\s.\-·]{0,3}\d{4}/g;
+    /* 매우 너그러운 모바일 패턴: 구분자 최대 3자 허용 (쉼표 포함) */
+    const LAST_MOB=/01[016789][,.\-\s·]{0,3}\d{3,4}[,.\-\s·]{0,3}\d{4}/g;
     const mobMatches=maskedText.match(LAST_MOB)||[];
     for(const rec of records){
       if(!rec.휴대폰&&mobMatches.length){
@@ -3364,7 +3368,7 @@ function parseFullTextToRecords(fullText){
         const clean=raw.replace(/[\s.\-·]/g,"");
         const formatted=clean.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3");
         rec.휴대폰=formatted;
-        console.log("[v9.35 LAST RESORT] 휴대폰 추출:",formatted,"← 원문:",raw);
+        console.log("[v9.36 LAST RESORT] 휴대폰 추출:",formatted,"← 원문:",raw);
       }
     }
   }
@@ -4487,6 +4491,19 @@ async function confirmImages(){
             r.담당직함=parsed.담당직함||"";
             r.전화=parsed.전화||"";
             r.휴대폰=parsed.휴대폰||"";
+            /* ★ v9.36 AI 경로 휴대폰 보강: Gemini가 누락한 경우 ocrFullText 재스캔 */
+            if(!r.휴대폰 && r.전화 && typeof isMobile==="function" && isMobile(r.전화)){
+              r.휴대폰=r.전화; r.전화="";
+            }
+            if(!r.휴대폰 && ocrFullText){
+              const _flatOcr=ocrFullText.replace(/[\n\r]/g," ");
+              const _mob=_flatOcr.match(/01[016789][,.\-\s·]{0,5}\d{3,4}[,.\-\s·]{0,5}\d{4}/);
+              if(_mob){
+                const _c=_mob[0].replace(/[^\d]/g,"");
+                r.휴대폰=_c.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3");
+                console.log("[v9.36 AI LAST RESORT] 휴대폰:",r.휴대폰,"← OCR:",_mob[0]);
+              }
+            }
             r.이메일=parsed.이메일||"";
             r.사업자번호=parsed.사업자번호||"";
             if(/^대표(이사)?$/.test(parsed.담당직함||"")){
@@ -5101,7 +5118,8 @@ function isCeoTitle(t) {
 // 010 휴대폰 여부 판별 (★ v9.30: 구분자 정규화 후 비교 — 010-xxx, 010.xxx, 010 xxx 모두 처리)
 function isMobile(t) {
   if (!t) return false;
-  const clean = t.trim().replace(/[\s\-.()+]/g, "");
+  /* ★ v9.36: 쉼표(,) 구분자 추가 — Vision API가 "010, 2043. 8373" 형태로 출력하는 경우 대응 */
+  const clean = t.trim().replace(/[\s\-.()+,]/g, "");
   if (/^8210\d{7,8}$/.test(clean)) return true;  // +82-10-... 형식
   return /^0(10|11|16|17|18|19)\d{7,8}$/.test(clean);
 }
@@ -6673,7 +6691,7 @@ function setExpoFile(file) {
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
   {
-    version: "v9.35",
+    version: "v9.36",
     date: "2026-04-26 17:00",
     title: "휴대폰 LAST RESORT 추출",
     dot: "fix",
