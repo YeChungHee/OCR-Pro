@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.29 — Organization-업종 컬럼 제거</title>
+<title>OCR Pro v9.30 — 체크항목만 등록/출력 + 중복이름 방지</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.29</span>
+  <span class="ver">v9.30</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2301,7 +2301,7 @@ function render(){
     const _직함 = (r.담당직함||"").trim();
     const _isCeo = typeof isCeoTitle==="function" && isCeoTitle(_직함);
     const _ceoName    = _isCeo ? esc(r.담당자||r.대표자||"") : esc(r.대표자||"");
-    const _contactName= (!_isCeo && r.담당자) ? esc(r.담당자) : "";
+    const _contactName= (!_isCeo && r.담당자 && r.담당자 !== r.대표자) ? esc(r.담당자) : "";
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
@@ -4951,12 +4951,15 @@ function exportExcel(){
   const ds=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
   const fname=`salesmap_${ds}_${String(exportSeq++).padStart(3,"0")}.xlsx`;
 
-  const rows=records.map(r=>{
+  const checked = records.filter(r => r.checked);
+  if (!checked.length) { toast("체크된 항목이 없습니다. 내보낼 항목을 체크해 주세요.", "error"); return; }
+  const rows=checked.map(r=>{
     const 직함원본 = (r.담당직함||"").trim();
     const 이름원본 = (r.담당자||"").trim();
     const isCeo    = isCeoTitle(직함원본);
     const 대표자명 = isCeo ? (이름원본||r.대표자||"") : (r.대표자||"");
-    const 담당직원 = (!isCeo && 이름원본) ? 이름원본 : "";
+    // ★ v9.30: 대표자와 담당자가 동일 인물이면 담당직원 컬럼 비움 (중복 방지)
+    const 담당직원 = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
 
     // 전화 라우팅
     const allPhones  = [r.전화,r.휴대폰].filter(Boolean).map(p=>p.trim()).filter(Boolean);
@@ -5012,8 +5015,13 @@ function isCeoTitle(t) {
   if (/^대표/.test(s)) return true;
   return CEO_TITLE_RE.test(s);
 }
-// 010 휴대폰 여부 판별
-function isMobile(t) { return /^0(10|11|16|17|18|19)[\s\-.]?\d{3,4}[\s\-.]?\d{4}$/.test((t||"").trim()); }
+// 010 휴대폰 여부 판별 (★ v9.30: 구분자 정규화 후 비교 — 010-xxx, 010.xxx, 010 xxx 모두 처리)
+function isMobile(t) {
+  if (!t) return false;
+  const clean = t.trim().replace(/[\s\-.()+]/g, "");
+  if (/^8210\d{7,8}$/.test(clean)) return true;  // +82-10-... 형식
+  return /^0(10|11|16|17|18|19)\d{7,8}$/.test(clean);
+}
 
 const SALESMAP_BASE = "https://salesmap.kr/api";
 
@@ -5075,8 +5083,8 @@ async function pushToSalesmap() {
     return;
   }
 
-  const targets = records.filter(r => r.회사명 && r.회사명.trim());
-  if (!targets.length) { toast("등록할 업체가 없습니다.", "error"); return; }
+  const targets = records.filter(r => r.checked && r.회사명 && r.회사명.trim());
+  if (!targets.length) { toast("체크된 업체가 없습니다. 등록할 항목을 체크해 주세요.", "error"); return; }
 
   const exh = ($("#exhInput")?.value || "").trim();
   const panel = $("#salesmapPanel");
@@ -5114,8 +5122,8 @@ async function pushToSalesmap() {
 
       // CEO급: 대표자명 = 담당자(명함 인물) or 기존 대표자 필드
       const 대표자명  = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
-      // 비CEO급: 담당직원 = 담당자 이름
-      const 담당직원  = (!isCeo && 이름원본) ? 이름원본 : "";
+      // 비CEO급: 담당직원 = 담당자 이름 (단, 대표자와 동일이면 중복 방지)
+      const 담당직원  = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
 
       // 전화 라우팅: 010형식→People전용, 유선→Organization전화
       const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
@@ -6581,6 +6589,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.30",
+    date: "2026-04-26 12:00",
+    title: "체크항목만 등록/출력 + 중복이름 방지 + isMobile 강화",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "pushToSalesmap 체크 필터 누락 수정 — r.checked 조건 추가. 체크하지 않은 항목은 세일즈맵에 등록되지 않음" },
+      { type: "fix",     text: "exportExcel 체크 필터 추가 — 체크된 항목만 엑셀 출력. 미체크 항목은 내보내기에서 제외" },
+      { type: "fix",     text: "대표자명·담당직원 중복 표시 방지 — r.담당자 === r.대표자이면 담당직원 컬럼 비움 (테이블·엑셀·API 세 경로 모두 적용)" },
+      { type: "improve", text: "isMobile() 정규식 강화 — 구분자(-, ., 공백 등) 제거 후 비교. +82-10 형식도 인식. 비정형 번호 오판 방지" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.29",
     date: "2026-04-26 10:00",
