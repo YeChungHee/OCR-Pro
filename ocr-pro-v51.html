@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.27 — 대표자/담당직원 중복 제거 + 회사명 우선순위 + 멀티워드 스킵</title>
+<title>OCR Pro v9.28 — OCRLearner 학습 엔진 + 대표자/담당직원 표시 통일</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.27</span>
+  <span class="ver">v9.28</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2295,8 +2295,13 @@ function render(){
     // People - 전화: 010 계열 모바일 우선, 없으면 일반 전화
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
     const mobileP = esc(allPhones.find(p => isMobile(p)) || r.전화 || "");
-    // People - 담당직원: 담당자만 표시 (대표자 폴백 제거 — 대표자는 대표자명 컬럼에만 표시)
-    const peopleName = esc(r.담당자 || "");
+    /* ★ v9.28: 테이블 표시를 exportExcel 로직과 통일 (isCeoTitle 기준 라우팅)
+       CEO 직함 → 대표자명 컬럼에 이름, 담당직원 컬럼 비움
+       비CEO 직함 → 담당직원 컬럼에 이름, 대표자명 컬럼은 r.대표자 */
+    const _직함 = (r.담당직함||"").trim();
+    const _isCeo = typeof isCeoTitle==="function" && isCeoTitle(_직함);
+    const _ceoName    = _isCeo ? esc(r.담당자||r.대표자||"") : esc(r.대표자||"");
+    const _contactName= (!_isCeo && r.담당자) ? esc(r.담당자) : "";
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
@@ -2306,8 +2311,8 @@ function render(){
         ? `<td class="editable" contenteditable="true" data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>`
         : `<td class="editable bizno-empty" contenteditable="true" data-field="사업자번호" data-id="${r.id}" data-ph="번호 입력..." style="font-size:12px;padding:6px 8px"></td>`
       }
-      <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${esc(r.대표자)}</td>
-      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${peopleName}</td>
+      <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${_ceoName}</td>
+      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${_contactName}</td>
       <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}" style="font-size:12px">${mobileP}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
@@ -2457,29 +2462,10 @@ document.addEventListener("focusout",e=>{
   const rec=records.find(r=>r.id===id);
   if(rec){
     const val = e.target.textContent.trim();
+    const oldVal = rec[field] || "";  /* ★ 학습용 이전값 캡처 */
     rec[field] = val;
-    /* ★ 학습: _coNameInferred 레코드의 회사명 수정 시 → 도메인 별칭 사전에 저장 */
-    if(field==="회사명"&&val&&rec._coNameInferred){
-      const domBase=(()=>{
-        if(rec.웹주소){
-          try{const u=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"http://"+rec.웹주소);
-            return u.hostname.replace(/^www\./,"").replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase();}catch(e){}
-        }
-        if(rec.이메일){const m=rec.이메일.match(/@([^@]+)$/);
-          return m?m[1].replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase():"";}
-        return "";
-      })();
-      if(domBase&&domBase.length>=2){
-        const aliasMap=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
-        if(aliasMap[domBase]!==val){
-          aliasMap[domBase]=val;
-          localStorage.setItem("ocrProAliasMap",JSON.stringify(aliasMap));
-          console.log(`[학습] 도메인 별칭 저장: "${domBase}" → "${val}"`);
-          toast(`도메인 별칭 학습 완료: ${domBase} → ${val}`, "success");
-        }
-        rec._coNameInferred=false;
-      }
-    }
+    /* ★ OCRLearner: 모든 필드 수정 → 학습 엔진으로 위임 (조건 없이 항상 분석) */
+    OCRLearner.capture(field, oldVal, val, rec);
     /* 내용 입력 시 상태를 완료로 변경 */
     const filled=EDIT_FIELDS.some(f=>rec[f]);
     if(filled&&rec.status==="대기")rec.status="완료";
@@ -2692,6 +2678,140 @@ const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기�
   "기술영업","경영지원","해외영업","국내영업","전략기술","기획영업","영업관리","사업개발","기술개발","연구개발","품질관리","생산관리","물류관리","마케팅","홍보팀","전략팀","전략기술그룹",
   /* Fix4 v9.25: 카드 UI 라벨·장소 단어 오분류 방지 */
   "홈페이지","QR코드","홈피","빌딩","타워","센터","아파트","오피스","플라자","스퀘어","파크","로비"]);
+
+/* ═══════════════════════════════════════════════════
+   🧠 OCRLearner — 사용자 교정 기반 동적 학습 엔진 v1.0
+   ─────────────────────────────────────────────────
+   역할: 필드 수정 이벤트를 감지해 파서 규칙을 자동 강화
+   저장: localStorage (ocrProSkipWords / ocrProAliasMap / ocrProNonName)
+   적용: load() → augment()로 SKIP_LABEL_SET·NON_NAME_KO에 동적 주입
+   ═══════════════════════════════════════════════════ */
+const OCRLearner = (() => {
+  const SK_SKIP  = "ocrProSkipWords";  // {WORD: hitCount}
+  const SK_ALIAS = "ocrProAliasMap";   // {domain: company}
+  const SK_NON   = "ocrProNonName";    // {한글단어: true}
+  const FREE_MAIL = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
+
+  let skipWords = {}, aliasMap = {}, nonName = {};
+
+  function _domain(rec){
+    if(rec.웹주소){
+      try{
+        const u=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"http://"+rec.웹주소);
+        return u.hostname.replace(/^www\./,"")
+          .replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|kr|shop|biz)$/i,"")
+          .toLowerCase();
+      }catch(e){}
+    }
+    if(rec.이메일){
+      const m=rec.이메일.match(/@([^@]+)$/);
+      if(m){
+        const d=m[1].replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase();
+        if(!FREE_MAIL.has(d)) return d;
+      }
+    }
+    return "";
+  }
+
+  function _likelyWrong(val){
+    if(!val||val.length<2) return false;
+    /* 순수 영문 대문자 조합 (SMART FACTORY, VENTURO ENTERPRISE 등) */
+    if(/^[A-Z][A-Z\s\/\-\.&]+$/.test(val.toUpperCase())&&val.length<=40) return true;
+    /* 직함이 포함된 값 (대표이사 배준성 등) */
+    if(/대표이사|대표\s+[가-힣]{2,3}|CEO[\s\/]|CTO[\s\/]/.test(val)) return true;
+    return false;
+  }
+
+  return {
+    load(){
+      skipWords=JSON.parse(localStorage.getItem(SK_SKIP)||"{}");
+      aliasMap =JSON.parse(localStorage.getItem(SK_ALIAS)||"{}");
+      nonName  =JSON.parse(localStorage.getItem(SK_NON)||"{}");
+      console.log(`[OCRLearner] 로드: skip=${Object.keys(skipWords).length}, alias=${Object.keys(aliasMap).length}, nonName=${Object.keys(nonName).length}`);
+    },
+
+    save(){
+      localStorage.setItem(SK_SKIP, JSON.stringify(skipWords));
+      localStorage.setItem(SK_ALIAS,JSON.stringify(aliasMap));
+      localStorage.setItem(SK_NON,  JSON.stringify(nonName));
+    },
+
+    /* 학습 규칙 → 파서 전역 룰셋에 즉시 주입 */
+    augment(){
+      let n=0;
+      for(const w of Object.keys(skipWords)){const u=w.toUpperCase();if(!SKIP_LABEL_SET.has(u)){SKIP_LABEL_SET.add(u);n++;}}
+      for(const w of Object.keys(nonName)){if(!NON_NAME_KO.has(w)){NON_NAME_KO.add(w);n++;}}
+      if(n>0) console.log(`[OCRLearner] 파서 주입: ${n}개 규칙`);
+    },
+
+    /* Stage 5 도메인→회사명 조회 */
+    getAlias(domBase){
+      const HARD={"c-lab":"씨랩"};
+      return HARD[domBase]||aliasMap[domBase]||null;
+    },
+
+    /* focusout 이벤트에서 호출 — 수정 내용을 분석해 학습 */
+    capture(field, oldVal, newVal, rec){
+      if(!newVal||oldVal===newVal) return false;
+      let learned=false;
+
+      if(field==="회사명"){
+        /* ① 도메인 별칭 — _coNameInferred 조건 제거, 도메인 있으면 항상 학습 */
+        const dom=_domain(rec);
+        if(dom&&aliasMap[dom]!==newVal){
+          aliasMap[dom]=newVal;
+          learned=true;
+          console.log(`[OCRLearner] 별칭 학습: "${dom}" → "${newVal}"`);
+          toast(`🧠 도메인 별칭 학습: ${dom} → ${newVal}`,"success");
+        }
+        /* ② 오분류 스킵 — oldVal이 명백한 라벨/직함 포함 값이면 skip 목록에 추가 */
+        if(oldVal&&_likelyWrong(oldVal)){
+          const key=oldVal.toUpperCase().trim();
+          skipWords[key]=(skipWords[key]||0)+1;
+          SKIP_LABEL_SET.add(key);  /* 즉시 현재 세션에도 적용 */
+          learned=true;
+          console.log(`[OCRLearner] 스킵 학습: "${key}" (${skipWords[key]}회)`);
+          if(!dom) toast(`🧠 스킵 학습: "${oldVal}"`,"success");
+        }
+      }
+
+      if(learned) this.save();
+      return learned;
+    },
+
+    /* 학습 현황 통계 */
+    getStats(){
+      return{
+        skip:    Object.keys(skipWords).length,
+        alias:   Object.keys(aliasMap).length,
+        nonName: Object.keys(nonName).length,
+        total:   Object.keys(skipWords).length+Object.keys(aliasMap).length+Object.keys(nonName).length
+      };
+    },
+
+    /* 전체 규칙 목록 (UI용) */
+    getRules(){
+      const r=[];
+      for(const[k,v]of Object.entries(aliasMap))  r.push({cat:"alias",  key:k,val:v,   label:`도메인 별칭: ${k} → ${v}`});
+      for(const[k,v]of Object.entries(skipWords)) r.push({cat:"skip",   key:k,val:v,   label:`스킵 단어: "${k}" (${v}회)`});
+      for(const[k]   of Object.entries(nonName))  r.push({cat:"nonname",key:k,val:true,label:`비이름 한글: "${k}"`});
+      return r;
+    },
+
+    deleteRule(cat,key){
+      if(cat==="alias")   delete aliasMap[key];
+      if(cat==="skip")  { delete skipWords[key]; SKIP_LABEL_SET.delete(key.toUpperCase()); }
+      if(cat==="nonname"){ delete nonName[key];  NON_NAME_KO.delete(key); }
+      this.save();
+    },
+
+    clearAll(){ skipWords={}; aliasMap={}; nonName={}; this.save(); }
+  };
+})();
+
+/* 앱 시작: 학습 데이터 로드 → 파서 주입 */
+OCRLearner.load();
+OCRLearner.augment();
 
 /* 개별 토큰 분류 — 순서 중요: 업종 > 직함 > 이름 */
 function classifyToken(t){
@@ -3127,10 +3247,7 @@ function parseFullTextToRecords(fullText){
 
   /* ===== Stage 5: 회사명 없는 레코드 — 도메인에서 이름 추론 ===== */
   const FREE_DOMAINS=new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live","me","msn"]);
-  /* ★ 도메인 별칭 사전: 도메인 base → 실제 회사명 (localStorage 학습 데이터 + 하드코딩 초기값) */
-  const HARDCODED_ALIAS={"c-lab":"씨랩"};
-  const learnedAlias=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
-  const DOMAIN_ALIAS={...HARDCODED_ALIAS,...learnedAlias};
+  /* ★ Stage 5: OCRLearner.getAlias()로 통합 — localStorage 직접 읽기 제거 */
   for(const rec of records){
     if(rec.회사명) continue;
     let inferred="";
@@ -3138,14 +3255,14 @@ function parseFullTextToRecords(fullText){
       const wdom=extractWebDom(rec.웹주소);
       if(wdom){
         const base=wdom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=OCRLearner.getAlias(base.toLowerCase())||base;
       }
     }
     if(!inferred&&rec.이메일){
       const edom=extractDomain(rec.이메일);
       if(edom){
         const base=edom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=OCRLearner.getAlias(base.toLowerCase())||base;
       }
     }
     if(inferred){
@@ -6467,6 +6584,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.28",
+    date: "2026-04-26 09:00",
+    title: "🧠 OCRLearner 학습 엔진 도입 + 대표자/담당직원 표시 통일",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "OCRLearner 싱글톤 모듈 신설 — localStorage 기반 학습 엔진 분리. skipWords(스킵단어)·aliasMap(도메인→회사명)·nonName(비이름) 3가지 규칙 카테고리 관리" },
+      { type: "improve", text: "학습 트리거 전면 확장 — 기존 '_coNameInferred=true' 조건 제거. 회사명 수정 시 도메인 있으면 항상 alias 학습, 이전 값이 라벨/직함 포함이면 skip 목록 자동 추가" },
+      { type: "improve", text: "augment() 파서 주입 — 학습된 skipWords/nonName을 앱 시작 시 SKIP_LABEL_SET·NON_NAME_KO에 즉시 주입. 이후 파싱에 바로 반영" },
+      { type: "fix",     text: "대표자명/담당직원 컬럼 표시 일관성 — isCeoTitle() 기반으로 테이블·엑셀·API 세 경로 모두 동일 로직 적용. CEO 직함 → 대표자명, 비CEO → 담당직원" },
+      { type: "fix",     text: "Stage 5 도메인 조회 통합 — localStorage 직접 읽기 제거, OCRLearner.getAlias()로 단일화" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.27",
     date: "2026-04-26 07:00",
