@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.28 — OCRLearner 학습 엔진 + 대표자/담당직원 표시 통일</title>
+<title>OCR Pro v9.29 — Organization-업종 컬럼 제거</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.28</span>
+  <span class="ver">v9.29</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -3654,8 +3654,7 @@ const COL_MAP={
                 "Organization - 주소"],
   "웹주소":   ["웹주소","홈페이지","웹사이트","url","website","web","홈페이지주소",
                 "Organization - 웹 주소"],
-  "업종":     ["업종","업태","industry","사업종류",
-                "Organization - 업종"],
+  "업종":     ["업종","업태","industry","사업종류"],
   "기업형태": ["기업형태","법인구분","기업구분",
                 "Organization - 기업형태"],
   "매출":     ["매출","매출액","revenue","Organization - 매출(억)"],
@@ -4980,7 +4979,6 @@ function exportExcel(){
       "Organization - 주소":         r.주소||"",
       "Organization - 웹 주소":      r.웹주소||"",
       "Organization - 기업형태":     r.기업형태||"",
-      "Organization - 업종":         r.업종||"",
       "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
       "Organization - 유입경로_상세":r.부스번호?(exh+" "+r.부스번호).trim():exh,
       "Organization - FlowScore":    r.flowScore||"",
@@ -5136,7 +5134,6 @@ async function pushToSalesmap() {
       if (담당직원)    fieldList.push({ name: "담당직원",   stringValue: 담당직원 });
       if (담당직원 && 직함원본) fieldList.push({ name: "담당직함", stringValue: 직함원본 });
       if (r.사업자번호) fieldList.push({ name: "사업자번호", stringValue: r.사업자번호 });
-      if (r.업종)      fieldList.push({ name: "업종",       stringValue: r.업종 });
       if (r.기업형태)  fieldList.push({ name: "기업형태",   stringValue: r.기업형태 });
       if (r.매출)      fieldList.push({ name: "매출(억)",   stringValue: String(r.매출) });
       if (r.설립일)    fieldList.push({ name: "설립일자",   stringValue: r.설립일 });
@@ -6584,6 +6581,18 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.29",
+    date: "2026-04-26 10:00",
+    title: "Organization - 업종 컬럼 제거",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "엑셀 출력(exportExcel)에서 'Organization - 업종' 컬럼 삭제" },
+      { type: "fix", text: "세일즈맵 API 등록(pushToSalesmap)에서 업종 필드 전송 제거" },
+      { type: "fix", text: "COLUMN_MAP에서 'Organization - 업종' 매핑 제거" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.28",
     date: "2026-04-26 09:00",
