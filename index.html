@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.26 — CEO 대표자 추출 + 한영이름 3단어 수정</title>
+<title>OCR Pro v9.27 — 대표자/담당직원 중복 제거 + 회사명 우선순위 + 멀티워드 스킵</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.26</span>
+  <span class="ver">v9.27</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2295,8 +2295,8 @@ function render(){
     // People - 전화: 010 계열 모바일 우선, 없으면 일반 전화
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
     const mobileP = esc(allPhones.find(p => isMobile(p)) || r.전화 || "");
-    // People - 이름: 담당자 있으면 담당자, 없으면 대표자
-    const peopleName = esc(r.담당자 || r.대표자 || "");
+    // People - 담당직원: 담당자만 표시 (대표자 폴백 제거 — 대표자는 대표자명 컬럼에만 표시)
+    const peopleName = esc(r.담당자 || "");
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
@@ -2680,7 +2680,10 @@ const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","M
   /* 영문 일반단어 — 담당자 오분류 방지 (Medical, Digital 등) */
   "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION",
   /* v9.23 추가 — 건설·제조·인증 뱃지·영문브랜드 오분류 차단 */
-  "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE"]);
+  "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE",
+  /* v9.27: 멀티워드 슬로건·제품명 조합 차단 */
+  "SMART FACTORY","SMART FACTORY / SECURITY","VENTURO ENTERPRISE","SMART SECURITY",
+  "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
   /* P-3 지점/본사 오분류 방지 */
@@ -2699,6 +2702,11 @@ function classifyToken(t){
   const tUpper=t.toUpperCase().replace(/[.,]/g,"");
   if(CERT_LABEL_SET.has(tUpper)) return null;
   if(SKIP_LABEL_SET.has(tUpper)) return null;
+  /* 0-b: 멀티워드 토큰 — 모든 단어가 SKIP_LABEL_SET이면 스킵 (SMART FACTORY 등) */
+  if(/\s/.test(t)){
+    const words=tUpper.split(/\s+/).filter(Boolean);
+    if(words.length>=2&&words.every(w=>SKIP_LABEL_SET.has(w)||CERT_LABEL_SET.has(w))) return null;
+  }
   /* 인증번호 패턴: "9001", "14001", "D 6008" 등 */
   if(/^\d{4,5}$/.test(t)) return null;
   if(/^[A-Z]\s?\d{3,5}$/.test(t)) return null;
@@ -2976,6 +2984,16 @@ function parseFullTextToRecords(fullText){
     /* ★ 새 레코드 시작 판단: 회사명이 이미 있는데 새 회사명이 오면 */
     /* 단, 최소 2개 필드가 채워져 있어야 분리 (너무 빈 레코드 방지) */
     if(f==="회사명"&&cur.회사명&&cur.회사명!==""){
+      /* ★ v9.27: ㈜/주식회사 포함된 공식 법인명은 _text 폴백 회사명을 덮어씀 (J&Y → 제이엔와이종합건설) */
+      const isOfficial=/(?:㈜|주식회사|\(주\)|㈜|유한회사|합자회사)/.test(tok.value);
+      const isPrevFallback=!(/(?:㈜|주식회사|\(주\)|㈜|유한회사)/.test(cur.회사명))
+                          &&cur.회사명.length<=8
+                          &&["담당자","전화","휴대폰","이메일","사업자번호"].filter(k=>cur[k]).length===0;
+      if(isOfficial&&isPrevFallback){
+        /* 이전 것이 _text 폴백 짧은 이름이고 새 것이 공식 법인명 → 교체 */
+        cur.회사명=tok.value;
+        continue;
+      }
       const filledFields=["담당자","전화","휴대폰","이메일","사업자번호"].filter(k=>cur[k]).length;
       if(filledFields>=1&&hasMinData(cur)){
         records.push({...cur});
@@ -6449,6 +6467,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.27",
+    date: "2026-04-26 07:00",
+    title: "대표자/담당직원 중복 제거 + 회사명 우선순위 + 멀티워드 SKIP",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "대표자명·담당직원 중복 표시 제거 — 담당직원 컬럼을 대표자 폴백 없이 순수 r.담당자만 표시. CEO 카드는 대표자명 컬럼에만 이름이 나타남" },
+      { type: "fix",     text: "공식 법인명 우선순위 — ㈜/주식회사 포함된 회사명이 오면 앞서 _text 폴백으로 채워진 짧은 이름(J&Y 등)을 교체. '대표이사 배준성 → 회사명' 오분류 해소" },
+      { type: "fix",     text: "멀티워드 SKIP 확장 — 'SMART FACTORY', 'VENTURO ENTERPRISE', 'tit', 'La elle' 등 멀티워드 조합도 SKIP_LABEL_SET으로 차단. 회사명/담당자 오분류 방지" },
+      { type: "fix",     text: "classifyToken 멀티워드 자동 SKIP — 공백 포함 토큰의 모든 단어가 SKIP/CERT 목록에 속하면 자동 null 반환 (목록에 없는 조합도 차단)" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.26",
     date: "2026-04-26 05:30",
