@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.30 — 체크항목만 등록/출력 + 중복이름 방지</title>
+<title>OCR Pro v9.31 — 전화(010) 컬럼 일반전화 폴백 제거</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.30</span>
+  <span class="ver">v9.31</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2292,9 +2292,9 @@ function render(){
       biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
     }
 
-    // People - 전화: 010 계열 모바일 우선, 없으면 일반 전화
+    // People - 전화: 010 계열만 표시 (일반전화 폴백 제거 — v9.31)
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
-    const mobileP = esc(allPhones.find(p => isMobile(p)) || r.전화 || "");
+    const mobileP = esc(allPhones.find(p => isMobile(p)) || "");
     /* ★ v9.28: 테이블 표시를 exportExcel 로직과 통일 (isCeoTitle 기준 라우팅)
        CEO 직함 → 대표자명 컬럼에 이름, 담당직원 컬럼 비움
        비CEO 직함 → 담당직원 컬럼에 이름, 대표자명 컬럼은 r.대표자 */
@@ -6589,6 +6589,16 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.31",
+    date: "2026-04-26 13:00",
+    title: "전화(010) 컬럼 일반전화 폴백 제거",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "테이블 전화(010) 컬럼 — 일반전화 폴백(|| r.전화) 제거. 010 계열 번호가 없으면 셀 공백 표시. 02/031 등 유선번호가 잘못 노출되던 오류 수정" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.30",
     date: "2026-04-26 12:00",
