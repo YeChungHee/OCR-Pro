@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.31 — 전화(010) 컬럼 일반전화 폴백 제거</title>
+<title>OCR Pro v9.33 — 010 번호 추출 강화 + 한글 이름 공백 보정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.31</span>
+  <span class="ver">v9.33</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2292,9 +2292,13 @@ function render(){
       biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
     }
 
-    // People - 전화: 010 계열만 표시 (일반전화 폴백 제거 — v9.31)
+    // 전화 컬럼: 010 있으면 정상 표시, 없으면 일반전화를 회색으로 (v9.32)
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
-    const mobileP = esc(allPhones.find(p => isMobile(p)) || "");
+    const _mobileNum  = allPhones.find(p => isMobile(p)) || "";
+    const _landlineNum = allPhones.find(p => !isMobile(p)) || "";
+    const mobileP = _mobileNum
+      ? esc(_mobileNum)
+      : (_landlineNum ? `<span style="color:var(--mut);font-size:11px" title="일반전화 (세일즈맵 Organization-전화로 출력)">☎ ${esc(_landlineNum)}</span>` : "");
     /* ★ v9.28: 테이블 표시를 exportExcel 로직과 통일 (isCeoTitle 기준 라우팅)
        CEO 직함 → 대표자명 컬럼에 이름, 담당직원 컬럼 비움
        비CEO 직함 → 담당직원 컬럼에 이름, 대표자명 컬럼은 r.대표자 */
@@ -2847,12 +2851,12 @@ function classifyToken(t){
   /* 2. 이메일 (@@오타는 전처리에서 이미 보정됨, 이미지·JS 파일명 제외) */
   { const em = extractEmailSafe(t); if (em) return {field:"이메일", value:em}; }
 
-  /* 3. 휴대폰 (+82-10 → 010 변환 포함) */
-  if(/\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)){
-    const m=t.match(/\+?82[-.\s]?(10[-.\s]?\d{3,4}[-.\s]?\d{4})/);
+  /* 3. 휴대폰 (+82-10 → 010 변환 포함) — ★v9.33: [-.\s]{0,2} 다중구분자 허용 ("010. 2043. 8373" 형태 처리) */
+  if(/\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/.test(t)){
+    const m=t.match(/\+?82[-.\s]{0,2}(10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4})/);
     return {field:"휴대폰",value:"0"+m[1].replace(/[-.\s]/g,"").replace(/^(\d{2,3})(\d{3,4})(\d{4})$/,"$1-$2-$3")};
   }
-  if(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)) return {field:"휴대폰",value:t.match(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/)[0]};
+  if(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/.test(t)) return {field:"휴대폰",value:t.match(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/)[0]};
 
   /* 4. 일반전화 (1588 등 대표번호 포함, 괄호 포맷 041)742-9445 포함) */
   if(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/.test(t)) return {field:"전화",value:t.match(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/)[0]};
@@ -2966,8 +2970,8 @@ function parseFullTextToRecords(fullText){
 
     /* ★ 라벨 접두사 분리: "T. 041)742-9445" → "041)742-9445", "F. 041)..." → skip */
     processLine=processLine.replace(/^(?:Tel|T)\.\s*/i,"");
-    /* Mobile/M./HP/Dir/C.P/PON 라벨 제거 (뒤에 전화번호 있을 때만) — P-6 확장 */
-    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P|Dir|Direct|C\.P|PON)\s*[.:)]\s*(?=[\d+])/i,"");
+    /* Mobile/M./HP/Dir/C.P/PON 라벨 제거 — ★v9.33: 콜론 없는 "Mobile 010..." 형태도 처리 */
+    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P|Dir|Direct|C\.P|PON)(?:\s*[.:)]\s*|\s+)(?=[\d+])/i,"");
     /* E-mail/E. 라벨 제거 */
     processLine=processLine.replace(/^(?:E-?mail|E)\.\s*/i,"");
     /* Website/Web/W. 라벨 제거 — P-6 */
@@ -3006,8 +3010,8 @@ function parseFullTextToRecords(fullText){
         processLine=processLine.replace(em," "+em+" ");
       }
     }
-    /* 전화번호가 텍스트에 붙은 경우 */
-    const embeddedPhone=processLine.match(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/g);
+    /* 전화번호가 텍스트에 붙은 경우 — ★v9.33: 다중구분자 허용 */
+    const embeddedPhone=processLine.match(/01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}/g);
     if(embeddedPhone){
       for(const ph of embeddedPhone){
         processLine=processLine.replace(ph," "+ph+" ");
@@ -3021,9 +3025,13 @@ function parseFullTextToRecords(fullText){
 
     /* 탭/다중공백으로 1차 분리 (전체 줄 매칭은 하지 않음 — 복합 데이터 손실 방지) */
     const parts=processLine.split(/\t+|\s{2,}/);
-    for(const part of parts){
-      const p=part.trim();
+    for(let part of parts){
+      let p=part.trim();
       if(!p) continue;
+      /* ★ v9.33 Fix B: 탭 분리 후 각 파트에도 한글 이름 공백 보정 ("진 영 매" → "진영매")
+         "CEO | 진 영 매" → tab-split → ["CEO", "진 영 매"] → 두번째 파트 보정 필요 */
+      const koPartTest=p.replace(/\s+/g,"");
+      if(/^[가-힣]{2,4}$/.test(koPartTest)&&p.length<=10) p=koPartTest;
       /* ★ P-1: 괄호형 이중이름 "임재범(Jason Lim)" 또는 "강민수 (KANG MIN SOO)" → 한글 이름만 담당자로 추출 */
       const parenNameMatch=p.match(/^([가-힣]{2,4})\s*\(([A-Za-z][A-Za-z\s.]+)\)$/);
       if(parenNameMatch&&!NON_NAME_KO.has(parenNameMatch[1])){
@@ -3377,7 +3385,7 @@ function parseBusinessCard(text){
   /* ── 3. 전화·휴대폰 (라벨 기반 분류 우선) ── */
   for(const line of lines){
     /* Mobile/M./HP 라벨 → 휴대폰 */
-    const mobLabel=line.match(/(?:Mobile|M\.|HP|H\.P|핸드폰|휴대폰|휴대전화)[.\s:]*(\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}|01[016789][-.\s]?\d{3,4}[-.\s]?\d{4})/i);
+    const mobLabel=line.match(/(?:Mobile|M\.|HP|H\.P|핸드폰|휴대폰|휴대전화)[.\s:]*(\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4})/i);
     if(mobLabel&&!result.휴대폰){
       result.휴대폰=mobLabel[1].replace(/\+?82[-.\s]?/,'0');
     }
@@ -3389,7 +3397,7 @@ function parseBusinessCard(text){
   }
   /* 라벨 매칭 실패 시 폴백 */
   if(!result.휴대폰||!result.전화){
-    const phones=text.match(/(\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}|01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}|0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4})/g)||[];
+    const phones=text.match(/(\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4})/g)||[];
     for(const p of phones){
       const cleaned=p.replace(/[-.\s()]/g,'');
       if(result.휴대폰&&result.휴대폰.replace(/[-.\s()]/g,'')===cleaned) continue;
@@ -6589,6 +6597,29 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.33",
+    date: "2026-04-26 15:00",
+    title: "010 번호 추출 강화 + 한글 이름 공백 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "휴대폰 정규식 다중구분자 허용 — '010. 2043. 8373' 처럼 점+공백 두 글자 구분자 형태 인식 실패 수정. [-.\s]? → [-.\s]{0,2} 로 변경 (classifyToken·embeddedPhone·mobLabel·phones 전체 적용)" },
+      { type: "fix", text: "Mobile 라벨 제거 강화 — 'Mobile 010...' (콜론/점 없는 형태)도 라벨 제거 후 번호 추출. 기존은 'Mobile: 010...' 형태만 처리" },
+      { type: "fix", text: "탭분리 파트 한글 이름 공백 보정 — 'CEO | 진 영 매' → 파이프 탭변환 후 '진 영 매' 파트에 공백 보정 미적용 문제 수정. 탭분리 각 파트에도 koSpaceTest 적용 → '진영매' 인식" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.32",
+    date: "2026-04-26 14:00",
+    title: "전화 컬럼 UX 개선 — 010/일반전화 구분 표시",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "전화(010) 컬럼 표시 개선 — 010 번호는 정상(검정) 표시, 일반전화만 있을 경우 회색 ☎ 아이콘과 함께 표시. 완전 공백이 아닌 번호 확인 가능" },
+      { type: "fix",     text: "세일즈맵 출력 로직은 기존 유지 — 010→People-전화, 일반전화→Organization-전화 분리 그대로" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.31",
     date: "2026-04-26 13:00",
