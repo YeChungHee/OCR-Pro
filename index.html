@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.25 — 다중 명함 파서 오류 수정 6종</title>
+<title>OCR Pro v9.36 — 쉼표 구분자 전화번호 인식 + AI 경로 휴대폰 보강</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.25</span>
+  <span class="ver">v9.36</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2292,11 +2292,20 @@ function render(){
       biznoCell += `<span title="구글 검색에서 미발견" style="margin-left:4px;font-size:10px;color:var(--mut)">❓</span>`;
     }
 
-    // People - 전화: 010 계열 모바일 우선, 없으면 일반 전화
+    // 전화 컬럼: 010 있으면 정상 표시, 없으면 일반전화를 회색으로 (v9.32)
     const allPhones = [r.전화, r.휴대폰].filter(Boolean);
-    const mobileP = esc(allPhones.find(p => isMobile(p)) || r.전화 || "");
-    // People - 이름: 담당자 있으면 담당자, 없으면 대표자
-    const peopleName = esc(r.담당자 || r.대표자 || "");
+    const _mobileNum  = allPhones.find(p => isMobile(p)) || "";
+    const _landlineNum = allPhones.find(p => !isMobile(p)) || "";
+    const mobileP = _mobileNum
+      ? esc(_mobileNum)
+      : (_landlineNum ? `<span style="color:var(--mut);font-size:11px" title="일반전화 (세일즈맵 Organization-전화로 출력)">☎ ${esc(_landlineNum)}</span>` : "");
+    /* ★ v9.28: 테이블 표시를 exportExcel 로직과 통일 (isCeoTitle 기준 라우팅)
+       CEO 직함 → 대표자명 컬럼에 이름, 담당직원 컬럼 비움
+       비CEO 직함 → 담당직원 컬럼에 이름, 대표자명 컬럼은 r.대표자 */
+    const _직함 = (r.담당직함||"").trim();
+    const _isCeo = typeof isCeoTitle==="function" && isCeoTitle(_직함);
+    const _ceoName    = _isCeo ? esc(r.담당자||r.대표자||"") : esc(r.대표자||"");
+    const _contactName= (!_isCeo && r.담당자 && r.담당자 !== r.대표자) ? esc(r.담당자) : "";
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
@@ -2306,8 +2315,8 @@ function render(){
         ? `<td class="editable" contenteditable="true" data-field="사업자번호" data-id="${r.id}" style="font-size:12px;padding:6px 8px">${biznoCell}</td>`
         : `<td class="editable bizno-empty" contenteditable="true" data-field="사업자번호" data-id="${r.id}" data-ph="번호 입력..." style="font-size:12px;padding:6px 8px"></td>`
       }
-      <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${esc(r.대표자)}</td>
-      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${peopleName}</td>
+      <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${_ceoName}</td>
+      <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${_contactName}</td>
       <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}" style="font-size:12px">${mobileP}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
@@ -2457,29 +2466,10 @@ document.addEventListener("focusout",e=>{
   const rec=records.find(r=>r.id===id);
   if(rec){
     const val = e.target.textContent.trim();
+    const oldVal = rec[field] || "";  /* ★ 학습용 이전값 캡처 */
     rec[field] = val;
-    /* ★ 학습: _coNameInferred 레코드의 회사명 수정 시 → 도메인 별칭 사전에 저장 */
-    if(field==="회사명"&&val&&rec._coNameInferred){
-      const domBase=(()=>{
-        if(rec.웹주소){
-          try{const u=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"http://"+rec.웹주소);
-            return u.hostname.replace(/^www\./,"").replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase();}catch(e){}
-        }
-        if(rec.이메일){const m=rec.이메일.match(/@([^@]+)$/);
-          return m?m[1].replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase():"";}
-        return "";
-      })();
-      if(domBase&&domBase.length>=2){
-        const aliasMap=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
-        if(aliasMap[domBase]!==val){
-          aliasMap[domBase]=val;
-          localStorage.setItem("ocrProAliasMap",JSON.stringify(aliasMap));
-          console.log(`[학습] 도메인 별칭 저장: "${domBase}" → "${val}"`);
-          toast(`도메인 별칭 학습 완료: ${domBase} → ${val}`, "success");
-        }
-        rec._coNameInferred=false;
-      }
-    }
+    /* ★ OCRLearner: 모든 필드 수정 → 학습 엔진으로 위임 (조건 없이 항상 분석) */
+    OCRLearner.capture(field, oldVal, val, rec);
     /* 내용 입력 시 상태를 완료로 변경 */
     const filled=EDIT_FIELDS.some(f=>rec[f]);
     if(filled&&rec.status==="대기")rec.status="완료";
@@ -2680,7 +2670,12 @@ const SKIP_LABEL_SET=new Set(["CO","LTD","INC","CORP","LLC","PTE","TEL","FAX","M
   /* 영문 일반단어 — 담당자 오분류 방지 (Medical, Digital 등) */
   "MEDICAL","DIGITAL","GLOBAL","GENERAL","NATIONAL","INDUSTRIAL","INTERNATIONAL","COMMERCIAL","FINANCIAL","TECHNICAL","SOLUTION","SYSTEM","SERVICE","MANAGEMENT","CONSULTING","ENGINEERING","TECHNOLOGY","INNOVATION","ENTERPRISE","DEVELOPMENT","MARKETING","RESEARCH","LABORATORY","INSTITUTE","ASSOCIATION","FOUNDATION",
   /* v9.23 추가 — 건설·제조·인증 뱃지·영문브랜드 오분류 차단 */
-  "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE"]);
+  "CONSTRUCTION","VENTURE","VENTURO","SMART","FACTORY","SECURITY","DAVID","HION","BUILDING","COMPLEX","HOLDINGS","PARTNERS","NETWORKS","CAPITAL","INVEST","STUDIO","CREATIVE",
+  /* v9.27: 멀티워드 슬로건·제품명 조합 차단 */
+  "SMART FACTORY","SMART FACTORY / SECURITY","VENTURO ENTERPRISE","SMART SECURITY",
+  "HI SOUL","HI' SOUL","HI! SOUL","TIT","TIT COUL","LA ELLE",
+  /* v9.36: 영문 브랜드명 오분류 차단 — 진성온(Lumisera) 등 회사 영문 브랜드명이 대표자명으로 오분류되는 케이스 */
+  "LUMISERA","JINSUNGON","SHINWON","SHINHWA","HANATECH","HANARO","KOREATECH","KOREABIO"]);
 /* 2~4자 한글이지만 사람 이름이 아닌 단어 — classifyToken에서 담당자 오분류 방지 */
 const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기업","여성기업","이노비즈","기술혁신","사단법인","중소기업","등록업체","우수업체","조달청등록","인증마크","제조업","건설업","서비스업","차량방호","교량난간","도로시설","농공단지","확장인도","도로시설물","방호책","인도교","바닥재","납품","업체",
   /* P-3 지점/본사 오분류 방지 */
@@ -2689,6 +2684,140 @@ const NON_NAME_KO=new Set(["납품업체","조달청","우수제품","벤처기�
   "기술영업","경영지원","해외영업","국내영업","전략기술","기획영업","영업관리","사업개발","기술개발","연구개발","품질관리","생산관리","물류관리","마케팅","홍보팀","전략팀","전략기술그룹",
   /* Fix4 v9.25: 카드 UI 라벨·장소 단어 오분류 방지 */
   "홈페이지","QR코드","홈피","빌딩","타워","센터","아파트","오피스","플라자","스퀘어","파크","로비"]);
+
+/* ═══════════════════════════════════════════════════
+   🧠 OCRLearner — 사용자 교정 기반 동적 학습 엔진 v1.0
+   ─────────────────────────────────────────────────
+   역할: 필드 수정 이벤트를 감지해 파서 규칙을 자동 강화
+   저장: localStorage (ocrProSkipWords / ocrProAliasMap / ocrProNonName)
+   적용: load() → augment()로 SKIP_LABEL_SET·NON_NAME_KO에 동적 주입
+   ═══════════════════════════════════════════════════ */
+const OCRLearner = (() => {
+  const SK_SKIP  = "ocrProSkipWords";  // {WORD: hitCount}
+  const SK_ALIAS = "ocrProAliasMap";   // {domain: company}
+  const SK_NON   = "ocrProNonName";    // {한글단어: true}
+  const FREE_MAIL = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
+
+  let skipWords = {}, aliasMap = {}, nonName = {};
+
+  function _domain(rec){
+    if(rec.웹주소){
+      try{
+        const u=new URL(rec.웹주소.startsWith("http")?rec.웹주소:"http://"+rec.웹주소);
+        return u.hostname.replace(/^www\./,"")
+          .replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|kr|shop|biz)$/i,"")
+          .toLowerCase();
+      }catch(e){}
+    }
+    if(rec.이메일){
+      const m=rec.이메일.match(/@([^@]+)$/);
+      if(m){
+        const d=m[1].replace(/\.(?:co\.kr|or\.kr|com|net|org|io|ai|tech|kr)$/i,"").toLowerCase();
+        if(!FREE_MAIL.has(d)) return d;
+      }
+    }
+    return "";
+  }
+
+  function _likelyWrong(val){
+    if(!val||val.length<2) return false;
+    /* 순수 영문 대문자 조합 (SMART FACTORY, VENTURO ENTERPRISE 등) */
+    if(/^[A-Z][A-Z\s\/\-\.&]+$/.test(val.toUpperCase())&&val.length<=40) return true;
+    /* 직함이 포함된 값 (대표이사 배준성 등) */
+    if(/대표이사|대표\s+[가-힣]{2,3}|CEO[\s\/]|CTO[\s\/]/.test(val)) return true;
+    return false;
+  }
+
+  return {
+    load(){
+      skipWords=JSON.parse(localStorage.getItem(SK_SKIP)||"{}");
+      aliasMap =JSON.parse(localStorage.getItem(SK_ALIAS)||"{}");
+      nonName  =JSON.parse(localStorage.getItem(SK_NON)||"{}");
+      console.log(`[OCRLearner] 로드: skip=${Object.keys(skipWords).length}, alias=${Object.keys(aliasMap).length}, nonName=${Object.keys(nonName).length}`);
+    },
+
+    save(){
+      localStorage.setItem(SK_SKIP, JSON.stringify(skipWords));
+      localStorage.setItem(SK_ALIAS,JSON.stringify(aliasMap));
+      localStorage.setItem(SK_NON,  JSON.stringify(nonName));
+    },
+
+    /* 학습 규칙 → 파서 전역 룰셋에 즉시 주입 */
+    augment(){
+      let n=0;
+      for(const w of Object.keys(skipWords)){const u=w.toUpperCase();if(!SKIP_LABEL_SET.has(u)){SKIP_LABEL_SET.add(u);n++;}}
+      for(const w of Object.keys(nonName)){if(!NON_NAME_KO.has(w)){NON_NAME_KO.add(w);n++;}}
+      if(n>0) console.log(`[OCRLearner] 파서 주입: ${n}개 규칙`);
+    },
+
+    /* Stage 5 도메인→회사명 조회 */
+    getAlias(domBase){
+      const HARD={"c-lab":"씨랩"};
+      return HARD[domBase]||aliasMap[domBase]||null;
+    },
+
+    /* focusout 이벤트에서 호출 — 수정 내용을 분석해 학습 */
+    capture(field, oldVal, newVal, rec){
+      if(!newVal||oldVal===newVal) return false;
+      let learned=false;
+
+      if(field==="회사명"){
+        /* ① 도메인 별칭 — _coNameInferred 조건 제거, 도메인 있으면 항상 학습 */
+        const dom=_domain(rec);
+        if(dom&&aliasMap[dom]!==newVal){
+          aliasMap[dom]=newVal;
+          learned=true;
+          console.log(`[OCRLearner] 별칭 학습: "${dom}" → "${newVal}"`);
+          toast(`🧠 도메인 별칭 학습: ${dom} → ${newVal}`,"success");
+        }
+        /* ② 오분류 스킵 — oldVal이 명백한 라벨/직함 포함 값이면 skip 목록에 추가 */
+        if(oldVal&&_likelyWrong(oldVal)){
+          const key=oldVal.toUpperCase().trim();
+          skipWords[key]=(skipWords[key]||0)+1;
+          SKIP_LABEL_SET.add(key);  /* 즉시 현재 세션에도 적용 */
+          learned=true;
+          console.log(`[OCRLearner] 스킵 학습: "${key}" (${skipWords[key]}회)`);
+          if(!dom) toast(`🧠 스킵 학습: "${oldVal}"`,"success");
+        }
+      }
+
+      if(learned) this.save();
+      return learned;
+    },
+
+    /* 학습 현황 통계 */
+    getStats(){
+      return{
+        skip:    Object.keys(skipWords).length,
+        alias:   Object.keys(aliasMap).length,
+        nonName: Object.keys(nonName).length,
+        total:   Object.keys(skipWords).length+Object.keys(aliasMap).length+Object.keys(nonName).length
+      };
+    },
+
+    /* 전체 규칙 목록 (UI용) */
+    getRules(){
+      const r=[];
+      for(const[k,v]of Object.entries(aliasMap))  r.push({cat:"alias",  key:k,val:v,   label:`도메인 별칭: ${k} → ${v}`});
+      for(const[k,v]of Object.entries(skipWords)) r.push({cat:"skip",   key:k,val:v,   label:`스킵 단어: "${k}" (${v}회)`});
+      for(const[k]   of Object.entries(nonName))  r.push({cat:"nonname",key:k,val:true,label:`비이름 한글: "${k}"`});
+      return r;
+    },
+
+    deleteRule(cat,key){
+      if(cat==="alias")   delete aliasMap[key];
+      if(cat==="skip")  { delete skipWords[key]; SKIP_LABEL_SET.delete(key.toUpperCase()); }
+      if(cat==="nonname"){ delete nonName[key];  NON_NAME_KO.delete(key); }
+      this.save();
+    },
+
+    clearAll(){ skipWords={}; aliasMap={}; nonName={}; this.save(); }
+  };
+})();
+
+/* 앱 시작: 학습 데이터 로드 → 파서 주입 */
+OCRLearner.load();
+OCRLearner.augment();
 
 /* 개별 토큰 분류 — 순서 중요: 업종 > 직함 > 이름 */
 function classifyToken(t){
@@ -2699,6 +2828,11 @@ function classifyToken(t){
   const tUpper=t.toUpperCase().replace(/[.,]/g,"");
   if(CERT_LABEL_SET.has(tUpper)) return null;
   if(SKIP_LABEL_SET.has(tUpper)) return null;
+  /* 0-b: 멀티워드 토큰 — 모든 단어가 SKIP_LABEL_SET이면 스킵 (SMART FACTORY 등) */
+  if(/\s/.test(t)){
+    const words=tUpper.split(/\s+/).filter(Boolean);
+    if(words.length>=2&&words.every(w=>SKIP_LABEL_SET.has(w)||CERT_LABEL_SET.has(w))) return null;
+  }
   /* 인증번호 패턴: "9001", "14001", "D 6008" 등 */
   if(/^\d{4,5}$/.test(t)) return null;
   if(/^[A-Z]\s?\d{3,5}$/.test(t)) return null;
@@ -2719,12 +2853,16 @@ function classifyToken(t){
   /* 2. 이메일 (@@오타는 전처리에서 이미 보정됨, 이미지·JS 파일명 제외) */
   { const em = extractEmailSafe(t); if (em) return {field:"이메일", value:em}; }
 
-  /* 3. 휴대폰 (+82-10 → 010 변환 포함) */
-  if(/\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)){
-    const m=t.match(/\+?82[-.\s]?(10[-.\s]?\d{3,4}[-.\s]?\d{4})/);
-    return {field:"휴대폰",value:"0"+m[1].replace(/[-.\s]/g,"").replace(/^(\d{2,3})(\d{3,4})(\d{4})$/,"$1-$2-$3")};
+  /* 3. 휴대폰 (+82-10 → 010 변환 포함) — ★v9.36: [,.\-\s]{0,2} 쉼표 구분자 추가 ("010, 2043. 8373" 형태 처리) */
+  if(/\+?82[,.\-\s]{0,2}10[,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/.test(t)){
+    const m=t.match(/\+?82[,.\-\s]{0,2}(10[,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4})/);
+    return {field:"휴대폰",value:"0"+m[1].replace(/[,.\-\s]/g,"").replace(/^(\d{2,3})(\d{3,4})(\d{4})$/,"$1-$2-$3")};
   }
-  if(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/.test(t)) return {field:"휴대폰",value:t.match(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/)[0]};
+  if(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/.test(t)){
+    const _raw=t.match(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/)[0];
+    const _clean=_raw.replace(/[,.\-\s]/g,"");
+    return {field:"휴대폰",value:_clean.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3")};
+  }
 
   /* 4. 일반전화 (1588 등 대표번호 포함, 괄호 포맷 041)742-9445 포함) */
   if(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/.test(t)) return {field:"전화",value:t.match(/(?:1588|1577|1544|1566|1600|1644|1661|1670|1688|1899)[-.\s]?\d{4}/)[0]};
@@ -2783,6 +2921,9 @@ function classifyToken(t){
 function parseFullTextToRecords(fullText){
   if(!fullText||fullText.trim().length<10) return null;
 
+  /* ★ v9.36: 원본 텍스트 보존 — LAST RESORT 모바일 스캔에 사용 */
+  const _origFullText=fullText;
+
   /* ★ v9.23 전처리: 장식체 명함 "배\n준\n성" → 단독 1글자 한글 줄 연속 시 병합 */
   {
     const rawLines=fullText.split("\n");
@@ -2802,6 +2943,54 @@ function parseFullTextToRecords(fullText){
     if(buf.length>=2) merged.push(buf);
     else if(buf) merged.push(buf);
     fullText=merged.join("\n");
+  }
+
+  /* ★ v9.36 전처리: Vision API 전화번호 단편 병합
+     "Mobile\n010.\n2043.\n8373" 처럼 줄이 쪼개진 경우 재결합
+     패턴1: 모바일 라벨 단독 줄 + 연속 숫자 단편 줄
+     패턴2: "010." 등 전화 앞부분 단독 줄 + 연속 숫자 단편 줄 */
+  {
+    const pfLines=fullText.split("\n");
+    const pfMerged=[];
+    let pi=0;
+    while(pi<pfLines.length){
+      const ln=pfLines[pi].trim();
+      /* 패턴1: 모바일 라벨 단독 줄 (Mobile, HP, C.P 등) */
+      const isMobLabel=/^(?:Mobile|M\.|HP|H\.P|Dir|Direct|C\.P|PON)$/i.test(ln);
+      if(isMobLabel&&pi+1<pfLines.length){
+        const parts=[ln];
+        let pj=pi+1;
+        while(pj<pfLines.length&&pj<pi+5){
+          const nxt=pfLines[pj].trim();
+          if(/^[\d.\-\s+]+$/.test(nxt)&&nxt.length<=8){parts.push(nxt);pj++;}
+          else break;
+        }
+        if(parts.length>1){
+          const joined=parts.join(" ");
+          const clean=joined.replace(/[\s\-.()+]/g,"");
+          if(/0(10|11|16|17|18|19)\d{7,8}/.test(clean)||/8210\d{7,8}/.test(clean)){
+            pfMerged.push(joined);pi=pj;continue;
+          }
+        }
+      }
+      /* 패턴2: 전화번호 앞부분 단독 줄 ("010.", "010-" 등) */
+      if(/^01[016789][.\-\s]?$/.test(ln)&&pi+1<pfLines.length){
+        const parts=[ln];
+        let pj=pi+1;
+        while(pj<pfLines.length&&pj<pi+4){
+          const nxt=pfLines[pj].trim();
+          if(/^[\d.\-\s]+$/.test(nxt)&&nxt.length<=6){parts.push(nxt);pj++;}
+          else break;
+        }
+        const joined=parts.join(" ");
+        const clean=joined.replace(/[\s\-.()+]/g,"");
+        if(/01[016789]\d{7,8}/.test(clean)){
+          pfMerged.push(joined);pi=pj;continue;
+        }
+      }
+      pfMerged.push(pfLines[pi]);pi++;
+    }
+    fullText=pfMerged.join("\n");
   }
 
   const lines=fullText.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
@@ -2838,8 +3027,8 @@ function parseFullTextToRecords(fullText){
 
     /* ★ 라벨 접두사 분리: "T. 041)742-9445" → "041)742-9445", "F. 041)..." → skip */
     processLine=processLine.replace(/^(?:Tel|T)\.\s*/i,"");
-    /* Mobile/M./HP/Dir/C.P/PON 라벨 제거 (뒤에 전화번호 있을 때만) — P-6 확장 */
-    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P|Dir|Direct|C\.P|PON)\s*[.:)]\s*(?=[\d+])/i,"");
+    /* Mobile/M./HP/Dir/C.P/PON 라벨 제거 — ★v9.33: 콜론 없는 "Mobile 010..." 형태도 처리 */
+    processLine=processLine.replace(/^(?:Mobile|M|HP|H\.P|Dir|Direct|C\.P|PON)(?:\s*[.:)]\s*|\s+)(?=[\d+])/i,"");
     /* E-mail/E. 라벨 제거 */
     processLine=processLine.replace(/^(?:E-?mail|E)\.\s*/i,"");
     /* Website/Web/W. 라벨 제거 — P-6 */
@@ -2878,8 +3067,8 @@ function parseFullTextToRecords(fullText){
         processLine=processLine.replace(em," "+em+" ");
       }
     }
-    /* 전화번호가 텍스트에 붙은 경우 */
-    const embeddedPhone=processLine.match(/01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/g);
+    /* 전화번호가 텍스트에 붙은 경우 — ★v9.36: 쉼표 구분자 추가 */
+    const embeddedPhone=processLine.match(/01[016789][,.\-\s]{0,2}\d{3,4}[,.\-\s]{0,2}\d{4}/g);
     if(embeddedPhone){
       for(const ph of embeddedPhone){
         processLine=processLine.replace(ph," "+ph+" ");
@@ -2893,9 +3082,13 @@ function parseFullTextToRecords(fullText){
 
     /* 탭/다중공백으로 1차 분리 (전체 줄 매칭은 하지 않음 — 복합 데이터 손실 방지) */
     const parts=processLine.split(/\t+|\s{2,}/);
-    for(const part of parts){
-      const p=part.trim();
+    for(let part of parts){
+      let p=part.trim();
       if(!p) continue;
+      /* ★ v9.33 Fix B: 탭 분리 후 각 파트에도 한글 이름 공백 보정 ("진 영 매" → "진영매")
+         "CEO | 진 영 매" → tab-split → ["CEO", "진 영 매"] → 두번째 파트 보정 필요 */
+      const koPartTest=p.replace(/\s+/g,"");
+      if(/^[가-힣]{2,4}$/.test(koPartTest)&&p.length<=10) p=koPartTest;
       /* ★ P-1: 괄호형 이중이름 "임재범(Jason Lim)" 또는 "강민수 (KANG MIN SOO)" → 한글 이름만 담당자로 추출 */
       const parenNameMatch=p.match(/^([가-힣]{2,4})\s*\(([A-Za-z][A-Za-z\s.]+)\)$/);
       if(parenNameMatch&&!NON_NAME_KO.has(parenNameMatch[1])){
@@ -2903,16 +3096,18 @@ function parseFullTextToRecords(fullText){
         console.log(`[괄호이름] "${p}" → 담당자="${parenNameMatch[1]}"`);
         continue;
       }
-      /* ★ P-3: 직함역순 "이사 이종원" → 담당직함 + 담당자 분리 */
-      const revTitleMatch=p.match(/^(대표이사|대표|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|팀장|실장|본부장|센터장|이사장|감사|수석|선임|사장|상무)\s+([가-힣]{2,4})$/);
+      /* ★ P-3: 직함역순 "이사 이종원" / "CEO 한상천" → 담당직함 + 담당자 분리
+         영문 경영자 직함 포함 (CEO, CTO, CFO, COO, 원장, 사장 등) */
+      const revTitleMatch=p.match(/^(대표이사|대표|사장|회장|원장|총장|소장|이사장|공동대표|각자대표|CEO|CTO|CFO|COO|CMO|CSO|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|팀장|실장|본부장|센터장|감사|수석|선임|상무)\s+([가-힣]{2,4})$/);
       if(revTitleMatch){
         tokens.push({field:"담당직함",value:revTitleMatch[1]});
         tokens.push({field:"담당자",value:revTitleMatch[2]});
         console.log(`[직함역순] "${p}" → 담당직함="${revTitleMatch[1]}" + 담당자="${revTitleMatch[2]}"`);
         continue;
       }
-      /* ★ P-2: 공백형 한글→영문 병기 "도영훈 Yeong-Hun Do" → 한글 이름만 담당자로 */
-      const koEnNameMatch=p.match(/^([가-힣]{2,4})\s+([A-Z][a-zA-Z\-]+(?:\s+[A-Z][a-zA-Z]+)?)$/);
+      /* ★ P-2: 공백형 한글→영문 병기 "도영훈 Yeong-Hun Do" / "정진호 Jung Jin Ho" → 한글 이름만 담당자로
+         영문 이름부: 최대 4단어까지 허용 (First Middle Last + 4th word) */
+      const koEnNameMatch=p.match(/^([가-힣]{2,4})\s+([A-Z][a-zA-Z\-]+(?:\s+[A-Z][a-zA-Z\-]+){0,3})$/);
       if(koEnNameMatch&&!NON_NAME_KO.has(koEnNameMatch[1])&&!ROLE_LABEL_RE.test(koEnNameMatch[1])&&!TITLE_PATTERN.test(koEnNameMatch[1])){
         tokens.push({field:"담당자",value:koEnNameMatch[1]});
         console.log(`[한영이름] "${p}" → 담당자="${koEnNameMatch[1]}"`);
@@ -2974,6 +3169,16 @@ function parseFullTextToRecords(fullText){
     /* ★ 새 레코드 시작 판단: 회사명이 이미 있는데 새 회사명이 오면 */
     /* 단, 최소 2개 필드가 채워져 있어야 분리 (너무 빈 레코드 방지) */
     if(f==="회사명"&&cur.회사명&&cur.회사명!==""){
+      /* ★ v9.27: ㈜/주식회사 포함된 공식 법인명은 _text 폴백 회사명을 덮어씀 (J&Y → 제이엔와이종합건설) */
+      const isOfficial=/(?:㈜|주식회사|\(주\)|㈜|유한회사|합자회사)/.test(tok.value);
+      const isPrevFallback=!(/(?:㈜|주식회사|\(주\)|㈜|유한회사)/.test(cur.회사명))
+                          &&cur.회사명.length<=8
+                          &&["담당자","전화","휴대폰","이메일","사업자번호"].filter(k=>cur[k]).length===0;
+      if(isOfficial&&isPrevFallback){
+        /* 이전 것이 _text 폴백 짧은 이름이고 새 것이 공식 법인명 → 교체 */
+        cur.회사명=tok.value;
+        continue;
+      }
       const filledFields=["담당자","전화","휴대폰","이메일","사업자번호"].filter(k=>cur[k]).length;
       if(filledFields>=1&&hasMinData(cur)){
         records.push({...cur});
@@ -3107,10 +3312,7 @@ function parseFullTextToRecords(fullText){
 
   /* ===== Stage 5: 회사명 없는 레코드 — 도메인에서 이름 추론 ===== */
   const FREE_DOMAINS=new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live","me","msn"]);
-  /* ★ 도메인 별칭 사전: 도메인 base → 실제 회사명 (localStorage 학습 데이터 + 하드코딩 초기값) */
-  const HARDCODED_ALIAS={"c-lab":"씨랩"};
-  const learnedAlias=JSON.parse(localStorage.getItem("ocrProAliasMap")||"{}");
-  const DOMAIN_ALIAS={...HARDCODED_ALIAS,...learnedAlias};
+  /* ★ Stage 5: OCRLearner.getAlias()로 통합 — localStorage 직접 읽기 제거 */
   for(const rec of records){
     if(rec.회사명) continue;
     let inferred="";
@@ -3118,14 +3320,14 @@ function parseFullTextToRecords(fullText){
       const wdom=extractWebDom(rec.웹주소);
       if(wdom){
         const base=wdom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=OCRLearner.getAlias(base.toLowerCase())||base;
       }
     }
     if(!inferred&&rec.이메일){
       const edom=extractDomain(rec.이메일);
       if(edom){
         const base=edom.replace(/\.(?:co\.kr|or\.kr|go\.kr|ac\.kr|com|net|org|io|ai|tech|app|dev|biz|shop|store|cloud|site|kr)$/i,"");
-        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=DOMAIN_ALIAS[base.toLowerCase()]||base;
+        if(base&&base.length>=2&&!FREE_DOMAINS.has(base.toLowerCase())) inferred=OCRLearner.getAlias(base.toLowerCase())||base;
       }
     }
     if(inferred){
@@ -3135,12 +3337,39 @@ function parseFullTextToRecords(fullText){
     }
   }
 
-  /* ★ Fix6 v9.25: 이름이 직함보다 먼저 나온 역순 패턴 사후 처리
-     예) 이경숙\n대표이사 → 담당직함=대표이사, 담당자=이경숙 → 대표자=이경숙 */
+  /* ★ Fix6 v9.26: 경영자 직함 보유자 → 담당자 → 대표자 이동
+     isCeoTitle() 기준으로 확장: 대표이사·대표·사장·회장·원장·CEO·CTO 등 모두 처리
+     예) 이경숙\n대표이사, 진영매\n대표, 한상천\nCEO 등 */
   for(const rec of records){
-    if(/^대표(이사)?$/.test((rec.담당직함||"").trim()) && rec.담당자 && !rec.대표자){
-      rec.대표자=rec.담당자;
-      rec.담당자="";
+    if(typeof isCeoTitle==="function"
+        ? isCeoTitle(rec.담당직함)
+        : /^(대표이사|대표|사장|회장|총장|원장|소장|이사장|CEO|CTO|CFO|COO|CMO|CSO|공동대표|각자대표)$/i.test((rec.담당직함||"").trim())){
+      if(rec.담당자 && !rec.대표자){
+        rec.대표자=rec.담당자;
+        rec.담당자="";
+      }
+    }
+  }
+
+  /* ★ v9.36 LAST RESORT: 원본 전체 텍스트에서 휴대폰 직접 스캔
+     Vision API가 번호를 여러 줄로 분리하거나 전처리가 실패해도
+     줄바꿈을 공백으로 바꾼 후 극도로 너그러운 패턴으로 재시도 */
+  {
+    /* 줄바꿈 → 공백으로 평탄화 (분리된 단편들을 이어붙임) */
+    const flatText=_origFullText.replace(/\n/g," ");
+    /* Fax/FAX 앞에 오는 번호는 제외 처리 (Fax 라벨 뒤 번호 마스킹) */
+    const maskedText=flatText.replace(/(?:Fax|F)\s*[.:\-]\s*[\d.\s\-]{8,20}/gi,"");
+    /* 매우 너그러운 모바일 패턴: 구분자 최대 3자 허용 (쉼표 포함) */
+    const LAST_MOB=/01[016789][,.\-\s·]{0,3}\d{3,4}[,.\-\s·]{0,3}\d{4}/g;
+    const mobMatches=maskedText.match(LAST_MOB)||[];
+    for(const rec of records){
+      if(!rec.휴대폰&&mobMatches.length){
+        const raw=mobMatches[0];
+        const clean=raw.replace(/[\s.\-·]/g,"");
+        const formatted=clean.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3");
+        rec.휴대폰=formatted;
+        console.log("[v9.36 LAST RESORT] 휴대폰 추출:",formatted,"← 원문:",raw);
+      }
     }
   }
 
@@ -3235,7 +3464,7 @@ function parseBusinessCard(text){
   /* ── 3. 전화·휴대폰 (라벨 기반 분류 우선) ── */
   for(const line of lines){
     /* Mobile/M./HP 라벨 → 휴대폰 */
-    const mobLabel=line.match(/(?:Mobile|M\.|HP|H\.P|핸드폰|휴대폰|휴대전화)[.\s:]*(\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}|01[016789][-.\s]?\d{3,4}[-.\s]?\d{4})/i);
+    const mobLabel=line.match(/(?:Mobile|M\.|HP|H\.P|핸드폰|휴대폰|휴대전화)[.\s:]*(\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4})/i);
     if(mobLabel&&!result.휴대폰){
       result.휴대폰=mobLabel[1].replace(/\+?82[-.\s]?/,'0');
     }
@@ -3247,7 +3476,7 @@ function parseBusinessCard(text){
   }
   /* 라벨 매칭 실패 시 폴백 */
   if(!result.휴대폰||!result.전화){
-    const phones=text.match(/(\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4}|01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}|0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4})/g)||[];
+    const phones=text.match(/(\+?82[-.\s]{0,2}10[-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|01[016789][-.\s]{0,2}\d{3,4}[-.\s]{0,2}\d{4}|0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4})/g)||[];
     for(const p of phones){
       const cleaned=p.replace(/[-.\s()]/g,'');
       if(result.휴대폰&&result.휴대폰.replace(/[-.\s()]/g,'')===cleaned) continue;
@@ -3512,8 +3741,7 @@ const COL_MAP={
                 "Organization - 주소"],
   "웹주소":   ["웹주소","홈페이지","웹사이트","url","website","web","홈페이지주소",
                 "Organization - 웹 주소"],
-  "업종":     ["업종","업태","industry","사업종류",
-                "Organization - 업종"],
+  "업종":     ["업종","업태","industry","사업종류"],
   "기업형태": ["기업형태","법인구분","기업구분",
                 "Organization - 기업형태"],
   "매출":     ["매출","매출액","revenue","Organization - 매출(억)"],
@@ -4263,6 +4491,19 @@ async function confirmImages(){
             r.담당직함=parsed.담당직함||"";
             r.전화=parsed.전화||"";
             r.휴대폰=parsed.휴대폰||"";
+            /* ★ v9.36 AI 경로 휴대폰 보강: Gemini가 누락한 경우 ocrFullText 재스캔 */
+            if(!r.휴대폰 && r.전화 && typeof isMobile==="function" && isMobile(r.전화)){
+              r.휴대폰=r.전화; r.전화="";
+            }
+            if(!r.휴대폰 && ocrFullText){
+              const _flatOcr=ocrFullText.replace(/[\n\r]/g," ");
+              const _mob=_flatOcr.match(/01[016789][,.\-\s·]{0,5}\d{3,4}[,.\-\s·]{0,5}\d{4}/);
+              if(_mob){
+                const _c=_mob[0].replace(/[^\d]/g,"");
+                r.휴대폰=_c.replace(/^(01\d)(\d{3,4})(\d{4})$/,"$1-$2-$3");
+                console.log("[v9.36 AI LAST RESORT] 휴대폰:",r.휴대폰,"← OCR:",_mob[0]);
+              }
+            }
             r.이메일=parsed.이메일||"";
             r.사업자번호=parsed.사업자번호||"";
             if(/^대표(이사)?$/.test(parsed.담당직함||"")){
@@ -4810,12 +5051,15 @@ function exportExcel(){
   const ds=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
   const fname=`salesmap_${ds}_${String(exportSeq++).padStart(3,"0")}.xlsx`;
 
-  const rows=records.map(r=>{
+  const checked = records.filter(r => r.checked);
+  if (!checked.length) { toast("체크된 항목이 없습니다. 내보낼 항목을 체크해 주세요.", "error"); return; }
+  const rows=checked.map(r=>{
     const 직함원본 = (r.담당직함||"").trim();
     const 이름원본 = (r.담당자||"").trim();
     const isCeo    = isCeoTitle(직함원본);
     const 대표자명 = isCeo ? (이름원본||r.대표자||"") : (r.대표자||"");
-    const 담당직원 = (!isCeo && 이름원본) ? 이름원본 : "";
+    // ★ v9.30: 대표자와 담당자가 동일 인물이면 담당직원 컬럼 비움 (중복 방지)
+    const 담당직원 = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
 
     // 전화 라우팅
     const allPhones  = [r.전화,r.휴대폰].filter(Boolean).map(p=>p.trim()).filter(Boolean);
@@ -4838,7 +5082,6 @@ function exportExcel(){
       "Organization - 주소":         r.주소||"",
       "Organization - 웹 주소":      r.웹주소||"",
       "Organization - 기업형태":     r.기업형태||"",
-      "Organization - 업종":         r.업종||"",
       "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
       "Organization - 유입경로_상세":r.부스번호?(exh+" "+r.부스번호).trim():exh,
       "Organization - FlowScore":    r.flowScore||"",
@@ -4872,8 +5115,14 @@ function isCeoTitle(t) {
   if (/^대표/.test(s)) return true;
   return CEO_TITLE_RE.test(s);
 }
-// 010 휴대폰 여부 판별
-function isMobile(t) { return /^0(10|11|16|17|18|19)[\s\-.]?\d{3,4}[\s\-.]?\d{4}$/.test((t||"").trim()); }
+// 010 휴대폰 여부 판별 (★ v9.30: 구분자 정규화 후 비교 — 010-xxx, 010.xxx, 010 xxx 모두 처리)
+function isMobile(t) {
+  if (!t) return false;
+  /* ★ v9.36: 쉼표(,) 구분자 추가 — Vision API가 "010, 2043. 8373" 형태로 출력하는 경우 대응 */
+  const clean = t.trim().replace(/[\s\-.()+,]/g, "");
+  if (/^8210\d{7,8}$/.test(clean)) return true;  // +82-10-... 형식
+  return /^0(10|11|16|17|18|19)\d{7,8}$/.test(clean);
+}
 
 const SALESMAP_BASE = "https://salesmap.kr/api";
 
@@ -4935,8 +5184,8 @@ async function pushToSalesmap() {
     return;
   }
 
-  const targets = records.filter(r => r.회사명 && r.회사명.trim());
-  if (!targets.length) { toast("등록할 업체가 없습니다.", "error"); return; }
+  const targets = records.filter(r => r.checked && r.회사명 && r.회사명.trim());
+  if (!targets.length) { toast("체크된 업체가 없습니다. 등록할 항목을 체크해 주세요.", "error"); return; }
 
   const exh = ($("#exhInput")?.value || "").trim();
   const panel = $("#salesmapPanel");
@@ -4974,8 +5223,8 @@ async function pushToSalesmap() {
 
       // CEO급: 대표자명 = 담당자(명함 인물) or 기존 대표자 필드
       const 대표자명  = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
-      // 비CEO급: 담당직원 = 담당자 이름
-      const 담당직원  = (!isCeo && 이름원본) ? 이름원본 : "";
+      // 비CEO급: 담당직원 = 담당자 이름 (단, 대표자와 동일이면 중복 방지)
+      const 담당직원  = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
 
       // 전화 라우팅: 010형식→People전용, 유선→Organization전화
       const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
@@ -4994,7 +5243,6 @@ async function pushToSalesmap() {
       if (담당직원)    fieldList.push({ name: "담당직원",   stringValue: 담당직원 });
       if (담당직원 && 직함원본) fieldList.push({ name: "담당직함", stringValue: 직함원본 });
       if (r.사업자번호) fieldList.push({ name: "사업자번호", stringValue: r.사업자번호 });
-      if (r.업종)      fieldList.push({ name: "업종",       stringValue: r.업종 });
       if (r.기업형태)  fieldList.push({ name: "기업형태",   stringValue: r.기업형태 });
       if (r.매출)      fieldList.push({ name: "매출(억)",   stringValue: String(r.매출) });
       if (r.설립일)    fieldList.push({ name: "설립일자",   stringValue: r.설립일 });
@@ -6442,6 +6690,124 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.36",
+    date: "2026-04-26 17:00",
+    title: "휴대폰 LAST RESORT 추출",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "LAST RESORT 모바일 스캔 추가 — 전처리·classifyToken을 통과하지 못한 경우에도 원본 전체 텍스트를 평탄화(줄바꿈→공백)한 뒤 매우 너그러운 패턴으로 010 번호를 최종 재추출. Vision API가 어떤 방식으로 줄을 쪼개도 확실히 잡음. Fax 번호는 사전 마스킹으로 오분류 방지" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.34",
+    date: "2026-04-26 16:30",
+    title: "전화 단편 병합 + 영문 브랜드명 오분류 차단",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "Vision API 전화번호 줄 분리 대응 — 'Mobile\\n010.\\n2043.\\n8373' 처럼 OCR이 전화번호를 여러 줄로 쪼갤 때 단편들을 재결합하는 전처리 추가" },
+      { type: "fix", text: "영문 브랜드명 대표자명 오분류 차단 — 'Lumisera' 등 회사 영문 브랜드명이 담당자→대표자로 오분류되던 문제 수정. SKIP_LABEL_SET에 영문 브랜드명 패턴 추가" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.33",
+    date: "2026-04-26 15:00",
+    title: "010 번호 추출 강화 + 한글 이름 공백 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "휴대폰 정규식 다중구분자 허용 — '010. 2043. 8373' 처럼 점+공백 두 글자 구분자 형태 인식 실패 수정. [-.\s]? → [-.\s]{0,2} 로 변경 (classifyToken·embeddedPhone·mobLabel·phones 전체 적용)" },
+      { type: "fix", text: "Mobile 라벨 제거 강화 — 'Mobile 010...' (콜론/점 없는 형태)도 라벨 제거 후 번호 추출. 기존은 'Mobile: 010...' 형태만 처리" },
+      { type: "fix", text: "탭분리 파트 한글 이름 공백 보정 — 'CEO | 진 영 매' → 파이프 탭변환 후 '진 영 매' 파트에 공백 보정 미적용 문제 수정. 탭분리 각 파트에도 koSpaceTest 적용 → '진영매' 인식" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.32",
+    date: "2026-04-26 14:00",
+    title: "전화 컬럼 UX 개선 — 010/일반전화 구분 표시",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "전화(010) 컬럼 표시 개선 — 010 번호는 정상(검정) 표시, 일반전화만 있을 경우 회색 ☎ 아이콘과 함께 표시. 완전 공백이 아닌 번호 확인 가능" },
+      { type: "fix",     text: "세일즈맵 출력 로직은 기존 유지 — 010→People-전화, 일반전화→Organization-전화 분리 그대로" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.31",
+    date: "2026-04-26 13:00",
+    title: "전화(010) 컬럼 일반전화 폴백 제거",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "테이블 전화(010) 컬럼 — 일반전화 폴백(|| r.전화) 제거. 010 계열 번호가 없으면 셀 공백 표시. 02/031 등 유선번호가 잘못 노출되던 오류 수정" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.30",
+    date: "2026-04-26 12:00",
+    title: "체크항목만 등록/출력 + 중복이름 방지 + isMobile 강화",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "pushToSalesmap 체크 필터 누락 수정 — r.checked 조건 추가. 체크하지 않은 항목은 세일즈맵에 등록되지 않음" },
+      { type: "fix",     text: "exportExcel 체크 필터 추가 — 체크된 항목만 엑셀 출력. 미체크 항목은 내보내기에서 제외" },
+      { type: "fix",     text: "대표자명·담당직원 중복 표시 방지 — r.담당자 === r.대표자이면 담당직원 컬럼 비움 (테이블·엑셀·API 세 경로 모두 적용)" },
+      { type: "improve", text: "isMobile() 정규식 강화 — 구분자(-, ., 공백 등) 제거 후 비교. +82-10 형식도 인식. 비정형 번호 오판 방지" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.29",
+    date: "2026-04-26 10:00",
+    title: "Organization - 업종 컬럼 제거",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "엑셀 출력(exportExcel)에서 'Organization - 업종' 컬럼 삭제" },
+      { type: "fix", text: "세일즈맵 API 등록(pushToSalesmap)에서 업종 필드 전송 제거" },
+      { type: "fix", text: "COLUMN_MAP에서 'Organization - 업종' 매핑 제거" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.28",
+    date: "2026-04-26 09:00",
+    title: "🧠 OCRLearner 학습 엔진 도입 + 대표자/담당직원 표시 통일",
+    dot: "improve",
+    items: [
+      { type: "improve", text: "OCRLearner 싱글톤 모듈 신설 — localStorage 기반 학습 엔진 분리. skipWords(스킵단어)·aliasMap(도메인→회사명)·nonName(비이름) 3가지 규칙 카테고리 관리" },
+      { type: "improve", text: "학습 트리거 전면 확장 — 기존 '_coNameInferred=true' 조건 제거. 회사명 수정 시 도메인 있으면 항상 alias 학습, 이전 값이 라벨/직함 포함이면 skip 목록 자동 추가" },
+      { type: "improve", text: "augment() 파서 주입 — 학습된 skipWords/nonName을 앱 시작 시 SKIP_LABEL_SET·NON_NAME_KO에 즉시 주입. 이후 파싱에 바로 반영" },
+      { type: "fix",     text: "대표자명/담당직원 컬럼 표시 일관성 — isCeoTitle() 기반으로 테이블·엑셀·API 세 경로 모두 동일 로직 적용. CEO 직함 → 대표자명, 비CEO → 담당직원" },
+      { type: "fix",     text: "Stage 5 도메인 조회 통합 — localStorage 직접 읽기 제거, OCRLearner.getAlias()로 단일화" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.27",
+    date: "2026-04-26 07:00",
+    title: "대표자/담당직원 중복 제거 + 회사명 우선순위 + 멀티워드 SKIP",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "대표자명·담당직원 중복 표시 제거 — 담당직원 컬럼을 대표자 폴백 없이 순수 r.담당자만 표시. CEO 카드는 대표자명 컬럼에만 이름이 나타남" },
+      { type: "fix",     text: "공식 법인명 우선순위 — ㈜/주식회사 포함된 회사명이 오면 앞서 _text 폴백으로 채워진 짧은 이름(J&Y 등)을 교체. '대표이사 배준성 → 회사명' 오분류 해소" },
+      { type: "fix",     text: "멀티워드 SKIP 확장 — 'SMART FACTORY', 'VENTURO ENTERPRISE', 'tit', 'La elle' 등 멀티워드 조합도 SKIP_LABEL_SET으로 차단. 회사명/담당자 오분류 방지" },
+      { type: "fix",     text: "classifyToken 멀티워드 자동 SKIP — 공백 포함 토큰의 모든 단어가 SKIP/CERT 목록에 속하면 자동 null 반환 (목록에 없는 조합도 차단)" }
+    ],
+    learnLog: []
+  },
+  {
+    version: "v9.26",
+    date: "2026-04-26 05:30",
+    title: "CEO 대표자명 추출 강화 + 한영병기 3단어 이름 수정",
+    dot: "fix",
+    items: [
+      { type: "fix",     text: "Fix A: Fix6 경영자 직함 확장 — isCeoTitle() 기준으로 전체 교체 (대표이사·대표·사장·회장·원장·CEO·CTO·CFO 등). 직함 보유자 이름이 담당자 대신 대표자 필드에 정확히 배정됨" },
+      { type: "fix",     text: "Fix B: 한영 3단어 이름 정상 처리 — koEnNameMatch 정규식 영문부 최대 4단어로 확장. '정진호 Jung Jin Ho' 등 3단어 영문 이름이 회사명 오분류되던 문제 수정" },
+      { type: "fix",     text: "Fix C: revTitleMatch(P-3) 경영자 직함 확장 — '사장', '회장', '원장', '이사장', 'CEO', 'CTO', 'CFO' 등 추가. '사장 홍길동' 역순 패턴도 직함+담당자로 분리" }
+    ],
+    learnLog: []
+  },
   {
     version: "v9.25",
     date: "2026-04-26 04:00",
