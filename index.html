@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.37 — 단일 명함 다중 분리 핫픽스 (점수 기반 독립 카드 + 한영 병합)</title>
+<title>OCR Pro v9.38 — 전시회 테이블 컬럼 분류 핫픽스</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.37</span>
+  <span class="ver">v9.38</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -6322,6 +6322,7 @@ const EXPO_SITE_PRESETS = {
   'simtos.org':  { name: 'SIMTOS', type: 'html_table', pageParam: 'GotoPage' },
   'kimes.kr':    { name: 'KIMES',  type: 'json_api',   pageParam: 'page' },
   'ikfa.or.kr':  { name: '한국프랜차이즈산업협회', type: 'bbs', pageParam: 'page' },
+  'dong-afairs.co.kr': { name: '동아전람', type: 'html_table', pageParam: 'pg' },
 };
 
 function getExpoPreset(url) {
@@ -6405,6 +6406,26 @@ function detectPageParam(url) {
     if (new RegExp('[?&]' + k + '=', 'i').test(url)) return k;
   }
   return 'GotoPage';
+}
+
+/* HTML 테이블 페이지네이션 링크 생성 — cate/block 등 부가 파라미터 보존 */
+function getHtmlTablePageUrl(html, baseUrl, pageParam, pg) {
+  const escapedParam = pageParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:href|data-href)=['"]([^'"]*[?&]${escapedParam}=${pg}(?:&[^'"]*)?)['"]`, 'i');
+  const m = html.match(re);
+  if (m) {
+    try { return new URL(m[1], baseUrl).href; } catch(e) {}
+  }
+
+  const jsRe = new RegExp(`(?:location\\.href|location|document\\.location)\\s*=\\s*['"]([^'"]*[?&]${escapedParam}=${pg}(?:&[^'"]*)?)['"]`, 'i');
+  const jsM = html.match(jsRe);
+  if (jsM) {
+    try { return new URL(jsM[1], baseUrl).href; } catch(e) {}
+  }
+
+  const urlObj = new URL(baseUrl);
+  urlObj.searchParams.set(pageParam, String(pg));
+  return urlObj.href;
 }
 
 /* 현재 페이지의 최대 페이지 번호 감지 */
@@ -6557,6 +6578,36 @@ function parseBbsDetailPage(html, fallback) {
   return r;
 }
 
+function cleanExpoCellText(cell) {
+  return (cell?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeExpoHomepage(raw, baseUrl) {
+  const value = (raw || '').replace(/\s+/g, '').trim();
+  if (!value || value === '-') return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^\/\//.test(value)) return 'https:' + value;
+  if (/^[\w.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(value)) return 'https://' + value;
+  try {
+    const abs = new URL(value, baseUrl).href;
+    return /^https?:\/\//i.test(abs) ? abs : '';
+  } catch(e) {
+    return '';
+  }
+}
+
+function getExpoHeaderRole(text) {
+  const label = (text || '').replace(/\s+/g, '').replace(/[()［］\[\]:：]/g, '').toLowerCase();
+  if (!label) return '';
+  if (/^(구분|분류|카테고리|업체분류|산업분류|category|type|sector)$/.test(label)) return 'category';
+  if (/(업체명|회사명|기업명|상호|브랜드명|참가업체|company|exhibitor|name)/i.test(label)) return 'name';
+  if (/^(tel|전화|전화번호|연락처|phone|mobile|contact)$/i.test(label)) return 'phone';
+  if (/(홈페이지|웹사이트|웹주소|website|homepage|url|link)/i.test(label)) return 'homepage';
+  if (/(취급품목|전시품|품목|제품|주요품목|전시제품|item|product|business)/i.test(label)) return 'product';
+  if (/(부스번호|부스|booth|stand)/i.test(label)) return 'booth';
+  return '';
+}
+
 /* HTML 테이블에서 업체 목록 추출 (범용) */
 function parseExhibitorTable(html, baseUrl) {
   // ── BBS(게시판)형 구조 우선 감지 (franchisecoex 등 ptype=view 사이트) ──
@@ -6571,34 +6622,62 @@ function parseExhibitorTable(html, baseUrl) {
   const doc = parser.parseFromString(html, 'text/html');
   const companies = [];
 
-  // 테이블 행 기반 파싱
-  const rows = doc.querySelectorAll('table tr');
-  for (const row of rows) {
-    const cells = row.querySelectorAll('td');
-    if (cells.length < 2) continue;
-    const name = cells[0]?.textContent?.trim();
-    if (!name || name.length < 2 || /업체명|회사명|company/i.test(name)) continue; // 헤더 제외
+  // 테이블별 헤더 기반 파싱: 동아전람처럼 "구분/업체명/TEL/홈페이지/취급품목" 구조를 정확히 분류
+  const tables = doc.querySelectorAll('table');
+  for (const table of tables) {
+    const rows = Array.from(table.querySelectorAll('tr'));
+    let headerMap = {};
 
-    // 상세보기 링크에서 bidx 추출
-    const detailA = row.querySelector('a[href*="detail"]');
-    let detailUrl = null;
-    if (detailA) {
-      try { detailUrl = new URL(detailA.getAttribute('href'), baseUrl).href; } catch(e) {}
+    for (const row of rows) {
+      const headerCells = Array.from(row.querySelectorAll('th'));
+      if (headerCells.length === 0) continue;
+      const map = {};
+      headerCells.forEach((cell, idx) => {
+        const role = getExpoHeaderRole(cleanExpoCellText(cell));
+        if (role && map[role] === undefined) map[role] = idx;
+      });
+      if (map.name !== undefined) {
+        headerMap = map;
+        break;
+      }
     }
 
-    // 홈페이지 링크
-    let homepage = cells[3]?.querySelector('a')?.href || cells[3]?.textContent?.trim() || '';
-    if (homepage && !/^https?:\/\//i.test(homepage) && homepage.includes('.')) {
-      homepage = 'https://' + homepage;
-    }
+    for (const row of rows) {
+      const cells = Array.from(row.querySelectorAll('td'));
+      if (cells.length < 2) continue;
 
-    companies.push({
-      회사명: name,
-      부스번호: cells[1]?.textContent?.trim() || '',
-      전시품: cells[2]?.textContent?.trim() || '',
-      웹주소: homepage,
-      _detailUrl: detailUrl,
-    });
+      let map = headerMap;
+      if (!map.name && cells.length >= 3) {
+        map = { name: 0, booth: 1, product: 2, homepage: 3 };
+      }
+
+      const nameIdx = map.name;
+      const name = nameIdx !== undefined ? cleanExpoCellText(cells[nameIdx]) : '';
+      if (!name || name.length < 2 || /업체명|회사명|기업명|company|exhibitor/i.test(name)) continue;
+      if (/^(구분|분류|카테고리|tel|홈페이지|취급품목)$/i.test(name)) continue;
+
+      // 상세보기 링크는 홈페이지 링크와 분리해서 detail/view 계열만 사용
+      const detailA = row.querySelector('a[href*="detail"],a[href*="view"],a[href*="bidx"]');
+      let detailUrl = null;
+      if (detailA) {
+        try { detailUrl = new URL(detailA.getAttribute('href'), baseUrl).href; } catch(e) {}
+      }
+
+      const homepageCell = map.homepage !== undefined ? cells[map.homepage] : null;
+      const homepageRaw = homepageCell?.querySelector('a')?.getAttribute('href')
+        || cleanExpoCellText(homepageCell);
+      const homepage = normalizeExpoHomepage(homepageRaw, baseUrl);
+
+      companies.push({
+        회사명: name,
+        카테고리: map.category !== undefined ? cleanExpoCellText(cells[map.category]) : '',
+        부스번호: map.booth !== undefined ? cleanExpoCellText(cells[map.booth]) : '',
+        전시품: map.product !== undefined ? cleanExpoCellText(cells[map.product]) : '',
+        전화: map.phone !== undefined ? cleanExpoCellText(cells[map.phone]) : '',
+        웹주소: homepage,
+        _detailUrl: detailUrl,
+      });
+    }
   }
   return companies;
 }
@@ -6908,9 +6987,10 @@ async function fetchAllExhibitors() {
                  || url + (url.includes('?') ? '&' : '?') + `page=${pg}`;
         } else {
           const re = new RegExp('([?&])' + pageParam + '=\\d+');
-          pageUrl = re.test(url)
+          pageUrl = getHtmlTablePageUrl(firstHtml, url, pageParam, pg)
+            || (re.test(url)
             ? url.replace(re, `$1${pageParam}=${pg}`)
-            : url + (url.includes('?') ? '&' : '?') + `${pageParam}=${pg}`;
+            : url + (url.includes('?') ? '&' : '?') + `${pageParam}=${pg}`);
         }
         updateExpoProgress(`📋 페이지 ${pg}/${maxPage} 가져오는 중...`, pg - 1, maxPage);
         pageHtml = await fetchWebpageHTML(pageUrl);
@@ -7116,6 +7196,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.38",
+    date: "2026-05-09 23:58",
+    title: "전시회 테이블 컬럼 분류 핫픽스",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "전시회 HTML 테이블 파서를 헤더 기반 분류로 보강 — 구분/업체명/TEL/홈페이지/취급품목 구조에서 구분이 회사명으로 들어가던 문제 차단" },
+      { type: "feat", text: "동아전람(dong-afairs.co.kr) 프리셋 추가 — pg 페이지 파라미터와 cate/block 필터 파라미터를 보존해 참가업체 목록 페이지를 순회" },
+      { type: "improve", text: "홈페이지·전화·취급품목을 전시회 파이프라인 내부 필드로 직접 매핑 — 명함, QR, 문서, URL 파이프라인에는 영향 없음" }
+    ],
+    learnLog: [
+      { text: "동아전람 참가업체 표 샘플에서 회사명=(주)테크원씨엔에스, 전화=02-2684-1821, 웹주소=http://www.i-techone.co.kr/kor/main/, 업종=배관내시경, 누수탐지기로 검증" }
+    ]
+  },
   {
     version: "v9.37",
     date: "2026-05-09 22:50",
