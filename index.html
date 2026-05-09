@@ -2726,9 +2726,30 @@ function computeLearnable(rec){
   return true;
 }
 
+/* ═══════════════════════════════════════════════════
+   v9.37 정책 — 단일 명함 오분리 차단 우선
+   ─────────────────────────────────────────────────
+   목표(변경): "2장/4장 자동 분리 유지"가 아닌 "한 장이 여러 건으로 쪼개지지 않음"
+   - 다중 분리 검출 임계값을 보수적으로 강화 (블록 16, 갭 25%, 점수 0.75)
+   - 분리가 발동되어도 모든 결과 레코드는 _needsReview=true로 강제 표시
+   - 사용자 확인 전에는 학습 데이터 진입 차단 (_learnable=false)
+   ═══════════════════════════════════════════════════ */
+const MULTI_CARD_POLICY = {
+  enabled: true,                /* false 시 다중 분리 완전 비활성화 (단일 카드만) */
+  minBlocks: 16,                /* 구 12 — 단일 명함 오분리 추가 차단 */
+  gapRatio: 0.25,               /* 구 0.18 — 명함 내부 여백 더 보수적으로 */
+  minScorePerCard: 0.75,        /* 구 0.65 — 독립 카드 점수 임계 상향 */
+  minBlocksPerQuad: 4,          /* 구 3 — 사분면당 최소 블록 강화 */
+  forceNeedsReview: true        /* 다중 분리 결과는 항상 사용자 검수 필요 */
+};
+
 function splitBlocksToCards(blocks){
-  /* ★ v9.37: 임계값 강화 (블록 6→12, 갭 7%→18%) + 점수 기반 독립성 검증 */
-  if(!blocks||blocks.length<12) return null;
+  /* ★ v9.37 정책: 단일 명함 오분리 차단을 위해 다중 분리 검출을 보수적으로 운영 */
+  if(!MULTI_CARD_POLICY.enabled){
+    console.log("[MultiCard v9.37] 정책 비활성화 — 단일 카드 처리");
+    return null;
+  }
+  if(!blocks||blocks.length<MULTI_CARD_POLICY.minBlocks) return null;
   const infos=blocks.map(b=>{
     const verts=b.boundingBox?.vertices||[];
     if(verts.length<4) return null;
@@ -2758,10 +2779,13 @@ function splitBlocksToCards(blocks){
     if(gap>maxXGap){maxXGap=gap;xDiv=(sortedX[i].cx+sortedX[i-1].cx)/2;}
   }
 
-  /* ★ v9.37: 의미 있는 갭 기준 18% (구 7%) */
-  const doY=maxYGap>imgH*0.18;
-  const doX=maxXGap>imgW*0.18;
-  if(!doY&&!doX) return null;
+  /* ★ v9.37 정책: 의미 있는 갭 기준 25% (단일 명함 내부 여백 더 보수적으로) */
+  const doY=maxYGap>imgH*MULTI_CARD_POLICY.gapRatio;
+  const doX=maxXGap>imgW*MULTI_CARD_POLICY.gapRatio;
+  if(!doY&&!doX){
+    console.log(`[MultiCard v9.37] 갭 미달 (Y${Math.round(maxYGap)}/${imgH} X${Math.round(maxXGap)}/${imgW}, 기준 ${MULTI_CARD_POLICY.gapRatio*100}%) → 단일 카드 처리`);
+    return null;
+  }
 
   /* 블록을 사분면에 배치 */
   const quads={TL:[],TR:[],BL:[],BR:[]};
@@ -2774,7 +2798,7 @@ function splitBlocksToCards(blocks){
   /* 읽기 순서: 좌상→우상→좌하→우하, 각 사분면 내부는 y→x 정렬 */
   const candidates=[];
   for(const q of["TL","TR","BL","BR"]){
-    if(quads[q].length<3) continue; /* ★ v9.37: 사분면당 최소 3블록 */
+    if(quads[q].length<MULTI_CARD_POLICY.minBlocksPerQuad) continue; /* ★ v9.37 정책: 사분면당 최소 4블록 */
     quads[q].sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
     const txt=quads[q].map(b=>b.text).join("\n").trim();
     if(txt) candidates.push(txt);
@@ -2785,12 +2809,15 @@ function splitBlocksToCards(blocks){
     return null;
   }
 
-  /* ★ v9.37: 점수 기반 독립 카드 판정 */
+  /* ★ v9.37 정책: 점수 임계 0.75 (구 0.65) — 단일 명함 오분리 추가 차단 */
   const scored=candidates.map(text=>({text,score:scoreIndependentCard(text)}));
-  const validCards=scored.filter(c=>c.score.total>=0.65 || (c.score.legal>0 && c.score.contact>0));
+  const validCards=scored.filter(c=>
+    c.score.total>=MULTI_CARD_POLICY.minScorePerCard ||
+    (c.score.legal>0 && c.score.contact>0 && c.score.total>=0.65)
+  );
 
   if(validCards.length<2){
-    console.log(`[MultiCard v9.37] 독립 카드 점수 미달 (${validCards.length}/${candidates.length}) → 단일 카드 처리`);
+    console.log(`[MultiCard v9.37] 독립 카드 점수 미달 (${validCards.length}/${candidates.length}, 기준 ${MULTI_CARD_POLICY.minScorePerCard}) → 단일 카드 처리`);
     console.log(`[MultiCard v9.37] 점수:`,scored.map(s=>s.score.total.toFixed(2)).join(","));
     return null;
   }
@@ -2799,7 +2826,9 @@ function splitBlocksToCards(blocks){
   const result=validCards.map(c=>c.text);
   result._splitConfidence=validCards.length/candidates.length;
   result._cardScores=validCards.map(c=>c.score);
-  console.log(`[MultiCard v9.37] doY=${doY}(갭${Math.round(maxYGap)}) doX=${doX}(갭${Math.round(maxXGap)}) → ${result.length}장 (conf=${result._splitConfidence.toFixed(2)})`);
+  /* ★ v9.37 정책: 다중 분리 발동 시 모든 결과는 검수 필요 — 호출부에서 _needsReview 강제 */
+  result._policyForceReview=MULTI_CARD_POLICY.forceNeedsReview;
+  console.log(`[MultiCard v9.37] 분리 검출 (정책: 강제 검수=${MULTI_CARD_POLICY.forceNeedsReview}): doY=${doY}(갭${Math.round(maxYGap)}) doX=${doX}(갭${Math.round(maxXGap)}) → ${result.length}장 (conf=${result._splitConfidence.toFixed(2)})`);
   return result;
 }
 
@@ -4676,13 +4705,16 @@ async function confirmImages(){
                 _r.웹주소=_parsed.웹주소||"";
                 _r.업종=_parsed.업종||"";
                 _r.status="완료";
-                /* ★ v9.37: 추출 품질 메타 부착 */
+                /* ★ v9.37 정책: 추출 품질 메타 + 다중 분리 결과는 항상 검수 필요 */
                 _r._pipeline="IMG";
                 _r._parserPath="vision-blocks-multi";
                 _r._splitConfidence=_splitConf;
                 _r._cardScore=_cardScoreVal;
                 _r._extractConfidence=computeOcrConfidence(_ct);
-                _r._needsReview=(_splitConf<0.80)||(_cardScoreVal<0.75);
+                /* 정책: 다중 분리는 단일 명함 오분리 위험이 있으므로 항상 검수 대상 */
+                _r._needsReview=_cardTexts._policyForceReview
+                                ? true
+                                : (_splitConf<0.80)||(_cardScoreVal<0.75);
                 _r._learnable=computeLearnable(_r);
                 pushRecord(_r);
                 multiCount++;
@@ -4691,7 +4723,9 @@ async function confirmImages(){
           }
           if(multiCount>0){
             successCount++;
-            toast(`📦 ${_cardTexts.length}장 분리 → ${multiCount}건 추출 (conf=${_splitConf.toFixed(2)})`,"success");
+            /* ★ v9.37 정책: 다중 분리는 검수 필요 — 사용자에게 즉시 안내 */
+            const _reviewMsg=_cardTexts._policyForceReview?` ⚠️ 검수 필요`:"";
+            toast(`📦 ${_cardTexts.length}장 분리 → ${multiCount}건 추출 (conf=${_splitConf.toFixed(2)})${_reviewMsg}`,"success");
             continue; /* 단건 파싱 패스 건너뜀 */
           }
         }
@@ -6920,19 +6954,22 @@ function setExpoFile(file) {
 const CHANGELOG = [
   {
     version: "v9.37",
-    date: "2026-05-09 22:30",
-    title: "단일 명함 다중 분리 핫픽스 — 점수 기반 독립 카드 + 한영 병합",
+    date: "2026-05-09 22:50",
+    title: "단일 명함 오분리 차단 핫픽스 (정책: 다중 분리는 검수 필요로 강등)",
     dot: "fix",
     items: [
-      { type: "fix", text: "splitBlocksToCards() 임계값 강화 — 블록 수 6→12, x/y 갭 7%→18%로 상향. 단일 명함 내부의 한영 병기 여백이 다중 카드로 오판되던 문제 차단. 사분면당 최소 3블록 + 점수 0.65 이상만 독립 카드로 인정 (codex v1.4~v1.6 권고)" },
+      { type: "fix", text: "[정책 전환] v9.37 성공 기준 재정의 — '다중 명함 자동 분리 유지'가 아닌 '단일 명함이 여러 건으로 쪼개지지 않음'. 다중 분리 검출은 보수적으로 운영하고, 발동되더라도 모든 결과를 검수 필요(_needsReview=true)로 강제 강등" },
+      { type: "fix", text: "splitBlocksToCards() 임계값 보수적 강화 — 블록 6→16, x/y 갭 7%→25%, 사분면당 최소 4블록, 독립 카드 점수 임계 0.65→0.75. 단일 명함 내부의 한영 병기·디자인 여백이 다중 카드로 오판되는 케이스 차단" },
+      { type: "feat", text: "MULTI_CARD_POLICY 정책 객체 신설 — enabled/minBlocks/gapRatio/minScorePerCard/minBlocksPerQuad/forceNeedsReview. 운영 중 정책 토글 가능. forceNeedsReview=true(기본값)이면 다중 분리 결과 모두 사용자 검수 대상" },
       { type: "feat", text: "scoreIndependentCard() 점수 함수 신설 — 법인(0.35)/연락처(0.30)/웹(0.20)/보조(0.10)/이름만(0.05) 가중. 사람 이름만 있는 후보를 회사명으로 오판하던 regex 방식 폐기. bare domain(co.kr/com 등 prefix 없음) 인식 + 영문 브랜드↔도메인 유사도 보강(+0.25 legal)" },
       { type: "feat", text: "parseFullTextToRecords() 한영 회사명 병합 4조건 게이트 — 한글 회사명 + 영문 회사형이 함께 검출되면 sameDomain/samePhone/hasSuffixOrAlias 중 하나 이상 만족 시 영문명 필드로 흡수 (별도 레코드 생성 X). onlyOneHasContact는 보조 신호로만 작동" },
       { type: "feat", text: "보조 함수 9종 신설 — shareDomain/sharePhone/isAdjacentRegion/aliasSimilarity(Levenshtein)/hasContactNearToken/hasContactInRec/computeOcrConfidence/hasBrandDomainSimilarity/hasOfficialSuffix" },
-      { type: "feat", text: "추출 품질 메타 표준화 — 모든 IMG 다중 카드 레코드에 _pipeline/_parserPath/_splitConfidence/_cardScore/_extractConfidence/_needsReview/_learnable 자동 부착. 잘못 분리된 레코드가 향후 학습 데이터에 누적되는 위험 차단(_learnable=false)" },
-      { type: "improve", text: "다중 카드 분리 시 토스트에 신뢰도 표시 — '📦 N장 분리 → M건 추출 (conf=0.XX)'. 사용자가 분리 신뢰도를 즉시 인지 가능" }
+      { type: "feat", text: "추출 품질 메타 표준화 — 모든 IMG 다중 카드 레코드에 _pipeline/_parserPath/_splitConfidence/_cardScore/_extractConfidence/_needsReview/_learnable 자동 부착. 정책상 다중 분리 결과는 _needsReview=true → _learnable=false → 학습 데이터 진입 차단" },
+      { type: "improve", text: "다중 카드 분리 시 토스트에 검수 안내 — '📦 N장 분리 → M건 추출 (conf=0.XX) ⚠️ 검수 필요'" }
     ],
     learnLog: [
-      { text: "단일 명함이 한글 회사명+영문 상호 병기 시 1장이 2~3개 레코드로 분리되던 사용자 보고 케이스 학습. 사분면 갭이 명함 내부 여백인지 카드 경계인지 점수로 판정하도록 알고리즘 변경" }
+      { text: "단일 명함 한영 병기 시 1장이 2~3개로 쪼개지던 사용자 보고 케이스 학습 → v9.37 성공 기준을 '오분리 차단'으로 재정의. 다중 분리는 발동 빈도를 낮추고 발동 시 자동 학습 차단 + 사용자 검수 의무화" },
+      { text: "fixture 우선순위 재조정 — #1 한영 회사명, #2 영문 브랜드+한글 법인, #3 한영 이름 병기, #7 QR 우세 명함을 핵심 회귀 케이스로. 실제 다중 명함 분리(#4 가로 2장, #5 세로 2장, #6 4장)는 후순위/보너스 케이스로 강등" }
     ]
   },
   {
