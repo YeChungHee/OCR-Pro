@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.36 — 쉼표 구분자 전화번호 인식 + AI 경로 휴대폰 보강</title>
+<title>OCR Pro v9.37 — 단일 명함 다중 분리 핫픽스 (점수 기반 독립 카드 + 한영 병합)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.36</span>
+  <span class="ver">v9.37</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2573,8 +2573,162 @@ function blockToText(block){
   ).join("\n");
 }
 
+/* ═══════════════════════════════════════════════════
+   v9.37 핫픽스 헬퍼 함수 9종
+   — 단일 명함 다중 분리 버그 차단용 보조 함수
+   ─────────────────────────────────────────────────
+   shareDomain / sharePhone / isAdjacentRegion / aliasSimilarity
+   hasContactNearToken / hasContactInRec / computeOcrConfidence
+   hasBrandDomainSimilarity / hasOfficialSuffix
+   ═══════════════════════════════════════════════════ */
+
+function _extractDomBase(s){
+  if(!s) return "";
+  const m=s.match(/(?:https?:\/\/|www\.|@)?([a-z0-9-]{2,})\.(?:co\.kr|or\.kr|com|net|org|kr|io|biz|tech|ai|app|dev|shop|store)/i);
+  return m?m[1].toLowerCase():"";
+}
+
+function _normalizePhone(s){
+  return (s||"").replace(/[^\d]/g,"");
+}
+
+function _levDist(a,b){
+  if(!a||!b) return Math.max((a||"").length,(b||"").length);
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},(_,i)=>[i].concat(new Array(n).fill(0)));
+  for(let j=1;j<=n;j++) dp[0][j]=j;
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  }
+  return dp[m][n];
+}
+
+function shareDomain(cur,tok){
+  const curDom=_extractDomBase(cur?.이메일)||_extractDomBase(cur?.웹주소);
+  const tokDom=_extractDomBase(tok?._email)||_extractDomBase(tok?._web)||_extractDomBase(tok?.value);
+  if(!curDom||!tokDom) return false;
+  return curDom===tokDom;
+}
+
+function sharePhone(cur,tok){
+  const curPhones=[_normalizePhone(cur?.전화),_normalizePhone(cur?.휴대폰)].filter(p=>p&&p.length>=9);
+  const tokPhones=[_normalizePhone(tok?._phone),_normalizePhone(tok?._mobile)].filter(p=>p&&p.length>=9);
+  return curPhones.some(p=>tokPhones.includes(p));
+}
+
+function isAdjacentRegion(a,b){
+  /* v9.37: _blockRegion 미보존 — 항상 false (v11 IMG 단계에서 활성화 예정) */
+  if(!a||!b) return false;
+  return false;
+}
+
+function aliasSimilarity(a,b){
+  if(!a||!b) return 0;
+  const A=String(a).toLowerCase().replace(/\s+/g,"");
+  const B=String(b).toLowerCase().replace(/\s+/g,"");
+  if(!A||!B) return 0;
+  if(A===B) return 1;
+  const dist=_levDist(A,B);
+  return 1-dist/Math.max(A.length,B.length);
+}
+
+function hasContactNearToken(tok){
+  return !!(tok?._phone||tok?._mobile||tok?._email);
+}
+
+function hasContactInRec(cur){
+  return !!(cur?.전화||cur?.휴대폰||cur?.이메일);
+}
+
+function computeOcrConfidence(text){
+  if(!text) return 0.5;
+  const len=text.length;
+  if(len<20) return 0.4;
+  if(len>1000) return 0.6;
+  const hasKorean=/[가-힣]/.test(text);
+  const hasContact=/[\d-]{9,}|@/.test(text);
+  let conf=0.5;
+  if(hasKorean) conf+=0.15;
+  if(hasContact) conf+=0.15;
+  return Math.min(0.9,conf);
+}
+
+function hasBrandDomainSimilarity(text){
+  if(!text) return false;
+  const wordMatch=text.match(/\b([A-Z][a-zA-Z]{3,})\b/);
+  const domainMatch=text.match(/(?:https?:\/\/|www\.|@)?([a-z0-9-]{3,})\.(?:co\.kr|com|net|kr|org|io|biz|tech|ai|app|dev)/i);
+  if(!wordMatch||!domainMatch) return false;
+  return aliasSimilarity(wordMatch[1],domainMatch[1])>=0.7;
+}
+
+function hasOfficialSuffix(text){
+  return /(?:Co\.?\s?Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation|Limited|Group|Holdings|Partners|GmbH|S\.A\.|S\.L\.|B\.V\.)\b/i.test(text||"");
+}
+
+/* ═══════════════════════════════════════════════════
+   v9.37 점수 기반 독립 카드 판정
+   — 사분면별 텍스트가 독립 명함 자격을 갖는지 점수화
+   — codex v1.5/v1.6 권고: 법인(0.35)/연락처(0.30)/웹(0.20)/보조(0.10)/이름만(0.05)
+   ═══════════════════════════════════════════════════ */
+function scoreIndependentCard(text){
+  const score={legal:0,contact:0,web:0,sub:0,nameOnly:0,total:0};
+  if(!text) return score;
+
+  /* 법인 신호: +0.35 */
+  if(/(?:㈜|주식회사|\(주\)|유한회사|합자회사|Co\.?\s?Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation|Limited)/.test(text)){
+    score.legal=0.35;
+  }else if(/[가-힣]{2,}(?:상사|건설|산업|기업|공업|화학|전자|식품|물류|유통|시스템|솔루션|네트웍스?|홀딩스|파트너스)/.test(text)){
+    score.legal=0.30;
+  }
+  /* v1.6: 영문 브랜드 + 도메인 유사도 보강 */
+  if(!score.legal && hasBrandDomainSimilarity(text)){
+    score.legal=0.25;
+  }
+
+  /* 연락처: +0.30 */
+  const hasMobile=/(?:01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}|\+?82[-.\s]?10[-.\s]?\d{3,4}[-.\s]?\d{4})/.test(text);
+  const hasLandline=/0\d{1,2}[).\-\s]\s*\d{3,4}[-.\s]\d{4}/.test(text);
+  if(hasMobile||hasLandline) score.contact=0.30;
+
+  /* 웹/이메일 신호 (v1.6: bare domain 포함): +0.20 */
+  const hasEmail=/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text);
+  const hasWeb=/(?:https?:\/\/|www\.)?[a-zA-Z0-9-]+\.(?:co\.kr|com|net|kr|org|io|biz|tech|ai|app|dev)\b/i.test(text);
+  if(hasEmail||hasWeb) score.web=0.20;
+
+  /* 보조 신호: +0.10 */
+  const hasAddr=/(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충|전|경|제주)/.test(text);
+  const hasTitle=/(?:대표|이사|부장|차장|과장|대리|팀장|실장|본부장|CEO|CTO|CFO|Manager|Director)/.test(text);
+  const hasBooth=/(?:부스|Booth|B-?\d|J-?\d|Hall)/.test(text);
+  if(hasAddr||hasTitle||hasBooth) score.sub=0.10;
+
+  /* 사람 이름만: +0.05 */
+  if(score.legal===0 && score.contact===0 && score.web===0){
+    if(/[가-힣]{2,4}|[A-Z][a-z]+\s+[A-Z][a-z]+/.test(text)){
+      score.nameOnly=0.05;
+    }
+  }
+
+  score.total=score.legal+score.contact+score.web+score.sub+score.nameOnly;
+  return score;
+}
+
+/* ═══════════════════════════════════════════════════
+   v9.37 학습 가능 게이트
+   — 잘못 분리된 레코드가 학습 데이터에 누적되는 위험 차단
+   ═══════════════════════════════════════════════════ */
+function computeLearnable(rec){
+  if(!rec) return false;
+  if(rec._needsReview) return false;
+  if(typeof rec._extractConfidence==="number" && rec._extractConfidence<0.75) return false;
+  if(rec._pipeline==="IMG"
+     && typeof rec._splitConfidence==="number"
+     && rec._splitConfidence<0.80) return false;
+  return true;
+}
+
 function splitBlocksToCards(blocks){
-  if(!blocks||blocks.length<6) return null; /* 블록 6개 미만이면 단일 카드로 간주 */
+  /* ★ v9.37: 임계값 강화 (블록 6→12, 갭 7%→18%) + 점수 기반 독립성 검증 */
+  if(!blocks||blocks.length<12) return null;
   const infos=blocks.map(b=>{
     const verts=b.boundingBox?.vertices||[];
     if(verts.length<4) return null;
@@ -2604,9 +2758,9 @@ function splitBlocksToCards(blocks){
     if(gap>maxXGap){maxXGap=gap;xDiv=(sortedX[i].cx+sortedX[i-1].cx)/2;}
   }
 
-  /* 의미 있는 갭인지 확인 (이미지 크기의 7% 이상) */
-  const doY=maxYGap>imgH*0.07;
-  const doX=maxXGap>imgW*0.07;
+  /* ★ v9.37: 의미 있는 갭 기준 18% (구 7%) */
+  const doY=maxYGap>imgH*0.18;
+  const doX=maxXGap>imgW*0.18;
   if(!doY&&!doX) return null;
 
   /* 블록을 사분면에 배치 */
@@ -2618,15 +2772,35 @@ function splitBlocksToCards(blocks){
   }
 
   /* 읽기 순서: 좌상→우상→좌하→우하, 각 사분면 내부는 y→x 정렬 */
-  const result=[];
+  const candidates=[];
   for(const q of["TL","TR","BL","BR"]){
-    if(!quads[q].length) continue;
+    if(quads[q].length<3) continue; /* ★ v9.37: 사분면당 최소 3블록 */
     quads[q].sort((a,b)=>a.cy-b.cy||a.cx-b.cx);
     const txt=quads[q].map(b=>b.text).join("\n").trim();
-    if(txt) result.push(txt);
+    if(txt) candidates.push(txt);
   }
-  console.log(`[MultiCard] 감지: doY=${doY}(갭${Math.round(maxYGap)}) doX=${doX}(갭${Math.round(maxXGap)}) → ${result.length}장`);
-  return result.length>1?result:null;
+
+  if(candidates.length<2){
+    console.log(`[MultiCard v9.37] 사분면 후보 ${candidates.length}개 미달 → 단일 카드 처리`);
+    return null;
+  }
+
+  /* ★ v9.37: 점수 기반 독립 카드 판정 */
+  const scored=candidates.map(text=>({text,score:scoreIndependentCard(text)}));
+  const validCards=scored.filter(c=>c.score.total>=0.65 || (c.score.legal>0 && c.score.contact>0));
+
+  if(validCards.length<2){
+    console.log(`[MultiCard v9.37] 독립 카드 점수 미달 (${validCards.length}/${candidates.length}) → 단일 카드 처리`);
+    console.log(`[MultiCard v9.37] 점수:`,scored.map(s=>s.score.total.toFixed(2)).join(","));
+    return null;
+  }
+
+  /* 배열 호환 유지 + 메타는 배열 속성으로 부착 (codex v1.4 권고) */
+  const result=validCards.map(c=>c.text);
+  result._splitConfidence=validCards.length/candidates.length;
+  result._cardScores=validCards.map(c=>c.score);
+  console.log(`[MultiCard v9.37] doY=${doY}(갭${Math.round(maxYGap)}) doX=${doX}(갭${Math.round(maxXGap)}) → ${result.length}장 (conf=${result._splitConfidence.toFixed(2)})`);
+  return result;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -3179,6 +3353,47 @@ function parseFullTextToRecords(fullText){
         cur.회사명=tok.value;
         continue;
       }
+
+      /* ★ v9.37: 한영 회사명 병합 — codex v1.6 권고 4조건 게이트 */
+      const prevIsKorean=/[가-힣]/.test(cur.회사명);
+      const newIsKorean=/[가-힣]/.test(tok.value);
+      const newIsEngBrand=/^[A-Z][A-Za-z\s.,'&-]+(?:Co\.?|Corp\.?|Ltd\.?|Inc\.?|LLC|Company|Corporation|Limited|Group|Holdings|Partners)?$/.test(tok.value);
+      const prevIsEngBrand=!prevIsKorean&&/^[A-Z]/.test(cur.회사명);
+      const isKorEngCandidate=
+        (prevIsKorean&&newIsEngBrand&&!newIsKorean)||
+        (prevIsEngBrand&&newIsKorean);
+
+      if(isKorEngCandidate){
+        const sameDomain=shareDomain(cur,tok);
+        const samePhone=sharePhone(cur,tok);
+        const hasSuffixOrAlias=
+          (newIsEngBrand&&hasOfficialSuffix(tok.value))||
+          (aliasSimilarity(cur.회사명,tok.value)>=0.6);
+        const onlyOneHasContact=!hasContactNearToken(tok)||!hasContactInRec(cur);
+
+        /* codex v1.6 §4-2: onlyOneHasContact는 보조 신호 — 단독 승인 X */
+        const conditionMet=
+          sameDomain||samePhone||hasSuffixOrAlias||
+          (onlyOneHasContact&&(sameDomain||samePhone||hasSuffixOrAlias));
+
+        if(conditionMet){
+          if(newIsEngBrand){
+            cur.영문명=cur.영문명||tok.value;
+          }else{
+            cur.영문명=cur.영문명||cur.회사명;
+            cur.회사명=tok.value;
+          }
+          cur._mergedKorEng=true;
+          cur._mergeReason=[
+            sameDomain&&"domain",
+            samePhone&&"phone",
+            hasSuffixOrAlias&&"suffixOrAlias"
+          ].filter(Boolean).join(",")||"contactAsymBoosted";
+          console.log(`[v9.37 한영병합] ${cur.회사명} | ${cur.영문명} (${cur._mergeReason})`);
+          continue; /* 새 레코드 분리 X */
+        }
+      }
+
       const filledFields=["담당자","전화","휴대폰","이메일","사업자번호"].filter(k=>cur[k]).length;
       if(filledFields>=1&&hasMinData(cur)){
         records.push({...cur});
@@ -4425,12 +4640,17 @@ async function confirmImages(){
         const visionRes=await callGoogleVision(base64);
 
         /* ★ v9.24 다중 명함 감지: Vision blocks → 공간 분리 → 카드별 독립 파싱 */
+        /* ★ v9.37: splitBlocksToCards 결과에 _splitConfidence/_cardScores 메타 부착 */
         const _blocks=visionRes.fullTextAnnotation?.pages?.[0]?.blocks;
         const _cardTexts=splitBlocksToCards(_blocks);
         if(_cardTexts&&_cardTexts.length>1){
+          const _splitConf=_cardTexts._splitConfidence??1.0;
+          const _cardScores=_cardTexts._cardScores||[];
           let multiCount=0;
-          for(const _ct of _cardTexts){
+          for(let _i=0;_i<_cardTexts.length;_i++){
+            const _ct=_cardTexts[_i];
             if(!_ct.trim()) continue;
+            const _cardScoreVal=_cardScores[_i]?.total??0;
             /* 각 카드 텍스트에 대해 Vision v3 파서 적용 */
             const _recs=parseFullTextToRecords(_ct);
             if(_recs&&_recs.length){
@@ -4456,6 +4676,14 @@ async function confirmImages(){
                 _r.웹주소=_parsed.웹주소||"";
                 _r.업종=_parsed.업종||"";
                 _r.status="완료";
+                /* ★ v9.37: 추출 품질 메타 부착 */
+                _r._pipeline="IMG";
+                _r._parserPath="vision-blocks-multi";
+                _r._splitConfidence=_splitConf;
+                _r._cardScore=_cardScoreVal;
+                _r._extractConfidence=computeOcrConfidence(_ct);
+                _r._needsReview=(_splitConf<0.80)||(_cardScoreVal<0.75);
+                _r._learnable=computeLearnable(_r);
                 pushRecord(_r);
                 multiCount++;
               }
@@ -4463,7 +4691,7 @@ async function confirmImages(){
           }
           if(multiCount>0){
             successCount++;
-            toast(`📦 ${_cardTexts.length}장 분리 → ${multiCount}건 추출`,"success");
+            toast(`📦 ${_cardTexts.length}장 분리 → ${multiCount}건 추출 (conf=${_splitConf.toFixed(2)})`,"success");
             continue; /* 단건 파싱 패스 건너뜀 */
           }
         }
@@ -6690,6 +6918,23 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.37",
+    date: "2026-05-09 22:30",
+    title: "단일 명함 다중 분리 핫픽스 — 점수 기반 독립 카드 + 한영 병합",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "splitBlocksToCards() 임계값 강화 — 블록 수 6→12, x/y 갭 7%→18%로 상향. 단일 명함 내부의 한영 병기 여백이 다중 카드로 오판되던 문제 차단. 사분면당 최소 3블록 + 점수 0.65 이상만 독립 카드로 인정 (codex v1.4~v1.6 권고)" },
+      { type: "feat", text: "scoreIndependentCard() 점수 함수 신설 — 법인(0.35)/연락처(0.30)/웹(0.20)/보조(0.10)/이름만(0.05) 가중. 사람 이름만 있는 후보를 회사명으로 오판하던 regex 방식 폐기. bare domain(co.kr/com 등 prefix 없음) 인식 + 영문 브랜드↔도메인 유사도 보강(+0.25 legal)" },
+      { type: "feat", text: "parseFullTextToRecords() 한영 회사명 병합 4조건 게이트 — 한글 회사명 + 영문 회사형이 함께 검출되면 sameDomain/samePhone/hasSuffixOrAlias 중 하나 이상 만족 시 영문명 필드로 흡수 (별도 레코드 생성 X). onlyOneHasContact는 보조 신호로만 작동" },
+      { type: "feat", text: "보조 함수 9종 신설 — shareDomain/sharePhone/isAdjacentRegion/aliasSimilarity(Levenshtein)/hasContactNearToken/hasContactInRec/computeOcrConfidence/hasBrandDomainSimilarity/hasOfficialSuffix" },
+      { type: "feat", text: "추출 품질 메타 표준화 — 모든 IMG 다중 카드 레코드에 _pipeline/_parserPath/_splitConfidence/_cardScore/_extractConfidence/_needsReview/_learnable 자동 부착. 잘못 분리된 레코드가 향후 학습 데이터에 누적되는 위험 차단(_learnable=false)" },
+      { type: "improve", text: "다중 카드 분리 시 토스트에 신뢰도 표시 — '📦 N장 분리 → M건 추출 (conf=0.XX)'. 사용자가 분리 신뢰도를 즉시 인지 가능" }
+    ],
+    learnLog: [
+      { text: "단일 명함이 한글 회사명+영문 상호 병기 시 1장이 2~3개 레코드로 분리되던 사용자 보고 케이스 학습. 사분면 갭이 명함 내부 여백인지 카드 경계인지 점수로 판정하도록 알고리즘 변경" }
+    ]
+  },
   {
     version: "v9.36",
     date: "2026-04-26 17:00",
