@@ -6810,6 +6810,13 @@ async function prefetchBbsDetails(companies, batchSize, delayMs) {
   return htmls;
 }
 
+function composeExpoIndustry(category, product, fallback) {
+  const parts = [category, product, fallback]
+    .map(v => (v || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join(' / ');
+}
+
 /* 공통 레코드 등록 헬퍼 */
 async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtmls = null) {
   let totalAdded = 0;
@@ -6826,7 +6833,7 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
     rec.회사명   = comp.회사명   || '';
     rec.영문명   = comp.영문명   || '';
     rec.부스번호 = comp.부스번호 || '';
-    rec.업종     = comp.전시품   || comp.카테고리 || comp.업종 || '';
+    rec.업종     = composeExpoIndustry(comp.카테고리, comp.전시품, comp.업종);
     rec.웹주소   = comp.웹주소   || '';
     rec.담당자   = comp.담당자   || '';
     rec.전화     = comp.전화     || '';
@@ -6847,8 +6854,9 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
             const bd = parseBbsDetailPage(detailHtml, comp);
             if (bd.부스번호)  rec.부스번호  = bd.부스번호;
             if (bd.웹주소)    rec.웹주소    = bd.웹주소;
-            if (bd.전시품)    rec.업종      = bd.전시품;
-            if (bd.카테고리 && !rec.업종) rec.업종 = bd.카테고리;
+            if (bd.전시품 || bd.카테고리) {
+              rec.업종 = composeExpoIndustry(bd.카테고리 || comp.카테고리, bd.전시품 || comp.전시품, comp.업종);
+            }
             if (bd.영문명 && !rec.영문명) rec.영문명 = bd.영문명;
           } else {
             // ── 일반 상세 파서 ──
@@ -7204,10 +7212,10 @@ const CHANGELOG = [
     items: [
       { type: "fix", text: "전시회 HTML 테이블 파서를 헤더 기반 분류로 보강 — 구분/업체명/TEL/홈페이지/취급품목 구조에서 구분이 회사명으로 들어가던 문제 차단" },
       { type: "feat", text: "동아전람(dong-afairs.co.kr) 프리셋 추가 — pg 페이지 파라미터와 cate/block 필터 파라미터를 보존해 참가업체 목록 페이지를 순회" },
-      { type: "improve", text: "홈페이지·전화·취급품목을 전시회 파이프라인 내부 필드로 직접 매핑 — 명함, QR, 문서, URL 파이프라인에는 영향 없음" }
+      { type: "improve", text: "홈페이지·전화·구분·취급품목을 전시회 파이프라인 내부 필드로 직접 매핑 — 산업/품목은 '구분 / 취급품목' 형태로 보존하고, 명함·QR·문서·URL 파이프라인에는 영향 없음" }
     ],
     learnLog: [
-      { text: "동아전람 참가업체 표 샘플에서 회사명=(주)테크원씨엔에스, 전화=02-2684-1821, 웹주소=http://www.i-techone.co.kr/kor/main/, 업종=배관내시경, 누수탐지기로 검증" }
+      { text: "동아전람 참가업체 표 샘플에서 회사명=(주)테크원씨엔에스, 전화=02-2684-1821, 웹주소=http://www.i-techone.co.kr/kor/main/, 업종=건축공구·장비 / 배관내시경, 누수탐지기로 검증" }
     ]
   },
   {
