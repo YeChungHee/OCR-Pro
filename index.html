@@ -2425,6 +2425,106 @@ function calcReliability(rec) {
 /* 직능 분류어 패턴 — 담당자 필드에 들어오면 안 되는 단어들 */
 const ROLE_LABEL_RE = /총괄$|지원$|본부$|센터$|팀$|실$|부$|부문$|사업부$|^경영$|^영업$|^기획$|^마케팅$|^기술$/;
 
+/* 명함 이미지 OCR 전용 정규화 — QR/문서/URL/전시회 경로에서는 호출하지 않음 */
+function extractCeoPersonTitle(text) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  const titleWords = "대표이사|대표|사장|회장|총장|원장|소장|이사장|공동대표|각자대표|CEO|CTO|CFO|COO|CMO|CSO|대표세무사|대표변호사|대표회계사|대표원장";
+  let m = s.match(new RegExp(`^([가-힣]{2,4})\\s*(${titleWords})$`, "i"));
+  if (m) return { name: m[1], title: m[2] };
+  m = s.match(new RegExp(`^(${titleWords})\\s*([가-힣]{2,4})$`, "i"));
+  if (m) return { name: m[2], title: m[1] };
+  return null;
+}
+
+function isOfficialCompanyNameForCard(name) {
+  const s = String(name || "").trim();
+  return /(?:㈜|\(주\)|주식회사|유한회사|합자회사|합명회사|법인|회사|Co\.?|Corp\.?|Inc\.?|Ltd\.?|LLC|Company|Corporation|Limited)/i.test(s);
+}
+
+function cardCompanyScore(rec) {
+  const name = String(rec?.회사명 || "").trim();
+  if (!name) return 0;
+  if (extractCeoPersonTitle(name)) return -100;
+  let score = 10;
+  if (isOfficialCompanyNameForCard(name)) score += 80;
+  if (/[가-힣]/.test(name)) score += 15;
+  if (rec.사업자번호) score += 20;
+  if (rec.웹주소 || rec.이메일) score += 10;
+  if (name.length > 20 && !isOfficialCompanyNameForCard(name)) score -= 15;
+  return score;
+}
+
+function normalizeBusinessCardImageRecord(rec, rawText = "") {
+  if (!rec) return rec;
+  const companyAsPerson = extractCeoPersonTitle(rec.회사명);
+  if (companyAsPerson) {
+    if (!rec.대표자) rec.대표자 = companyAsPerson.name;
+    if (!rec.담당직함) rec.담당직함 = companyAsPerson.title;
+    rec.회사명 = "";
+  }
+
+  const contactAsPerson = extractCeoPersonTitle(`${rec.담당자 || ""} ${rec.담당직함 || ""}`.trim());
+  if (contactAsPerson) {
+    rec.대표자 = rec.대표자 || contactAsPerson.name;
+    rec.담당직함 = rec.담당직함 || contactAsPerson.title;
+    rec.담당자 = "";
+  }
+
+  if (typeof isCeoTitle === "function" && isCeoTitle(rec.담당직함)) {
+    if (rec.담당자 && !rec.대표자) rec.대표자 = rec.담당자;
+    rec.담당자 = "";
+  }
+
+  if (!rec.대표자 && rawText) {
+    const fallback = extractCeoPersonTitle(rawText.replace(/\n/g, " "));
+    if (fallback) {
+      rec.대표자 = fallback.name;
+      if (!rec.담당직함) rec.담당직함 = fallback.title;
+    }
+  }
+  return rec;
+}
+
+function normalizeBusinessCardImageRecords(recs, rawText = "") {
+  const list = (recs || []).filter(Boolean).map(r => normalizeBusinessCardImageRecord(r, rawText));
+  if (list.length <= 1) return list;
+
+  let base = list[0];
+  for (const rec of list) {
+    if (cardCompanyScore(rec) > cardCompanyScore(base)) base = rec;
+  }
+
+  const meta = {
+    needsReview: list.some(r => r._needsReview),
+    learnable: list.every(r => r._learnable !== false),
+    parserPaths: [...new Set(list.map(r => r._parserPath).filter(Boolean))]
+  };
+
+  for (const rec of list) {
+    if (rec === base) continue;
+    const personFromCompany = extractCeoPersonTitle(rec.회사명);
+    if (personFromCompany) {
+      if (!base.대표자) base.대표자 = personFromCompany.name;
+      if (!base.담당직함) base.담당직함 = personFromCompany.title;
+    } else if (!base.회사명 && rec.회사명) {
+      base.회사명 = rec.회사명;
+    }
+
+    for (const k of ["영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","주소","웹주소","업종","기업형태","매출","영업이익","flowScore","부스번호"]) {
+      if (!base[k] && rec[k]) base[k] = rec[k];
+    }
+    if (rec.대표자 && rec.대표자 !== base.담당자 && !base.대표자) base.대표자 = rec.대표자;
+  }
+
+  normalizeBusinessCardImageRecord(base, rawText);
+  base._businessCardMergedCount = list.length;
+  if (meta.parserPaths.length) base._parserPath = meta.parserPaths.join("+");
+  if (meta.needsReview) base._needsReview = true;
+  base._learnable = meta.learnable;
+  return [base];
+}
+
 function pushRecord(rec) {
   const dup = findDuplicate(rec);
   if (dup) {
@@ -4658,6 +4758,7 @@ async function confirmImages(){
         console.log(`[HEIC] ${p.name}: MIME=${mimeType}, base64 크기=${sizeMB.toFixed(1)}MB`);
         try{
           const geminiResults=await ocrHeicWithGemini(base64, mimeType);
+          const cardRecords=[];
           for(const parsed of geminiResults){
             const r=emptyRec("이미지");
             r.thumb=p.dataUrl;
@@ -4677,10 +4778,14 @@ async function confirmImages(){
             r.웹주소=parsed.웹주소||"";
             r.업종=parsed.업종||"";
             r.status="완료";
-            pushRecord(r);
+            r._pipeline="IMG";
+            r._parserPath="heic-gemini";
+            cardRecords.push(r);
           }
+          const finalRecords=normalizeBusinessCardImageRecords(cardRecords, JSON.stringify(geminiResults));
+          for(const r of finalRecords) pushRecord(r);
           successCount++;
-          toast(`🤖 Gemini Vision: ${geminiResults.length}건 추출됨`,"success");
+          toast(`🤖 Gemini Vision: ${finalRecords.length}건 추출됨`,"success");
         }catch(gErr){
           console.error("[Gemini Vision OCR 오류]",p.name,gErr.message);
           const r=emptyRec("이미지");
@@ -4703,6 +4808,7 @@ async function confirmImages(){
           const _splitConf=_cardTexts._splitConfidence??1.0;
           const _cardScores=_cardTexts._cardScores||[];
           let multiCount=0;
+          const _pendingImageRecords=[];
           for(let _i=0;_i<_cardTexts.length;_i++){
             const _ct=_cardTexts[_i];
             if(!_ct.trim()) continue;
@@ -4743,12 +4849,14 @@ async function confirmImages(){
                                 ? true
                                 : (_splitConf<0.80)||(_cardScoreVal<0.75);
                 _r._learnable=computeLearnable(_r);
-                pushRecord(_r);
-                multiCount++;
+                _pendingImageRecords.push(_r);
               }
             }
           }
-          if(multiCount>0){
+          if(_pendingImageRecords.length>0){
+            const _finalImageRecords=normalizeBusinessCardImageRecords(_pendingImageRecords, _cardTexts.join("\n\n"));
+            for(const _r of _finalImageRecords) pushRecord(_r);
+            multiCount=_finalImageRecords.length;
             successCount++;
             /* ★ v9.37 정책: 다중 분리는 검수 필요 — 사용자에게 즉시 안내 */
             const _reviewMsg=_cardTexts._policyForceReview?` ⚠️ 검수 필요`:"";
@@ -4772,6 +4880,7 @@ async function confirmImages(){
 
         if(aiResults && aiResults.length>=1){
           /* ★ AI 파싱 성공 — 정확한 필드 매핑 */
+          const cardRecords=[];
           for(const parsed of aiResults){
             const r=emptyRec("이미지");
             r.thumb=p.dataUrl;
@@ -4820,10 +4929,14 @@ async function confirmImages(){
                 console.log(`[이름폴백] "${nm[1]} ${nm[2]}" OCR 패턴 추출`);
               }
             }
-            pushRecord(r);
+            r._pipeline="IMG";
+            r._parserPath="vision-ai";
+            cardRecords.push(r);
           }
+          const finalRecords=normalizeBusinessCardImageRecords(cardRecords, ocrFullText);
+          for(const r of finalRecords) pushRecord(r);
           successCount++;
-          toast(`🤖 AI: ${aiResults.length}건 추출됨`,"success");
+          toast(`🤖 AI: ${finalRecords.length}건 추출됨`,"success");
         }else{
           /* 정규식 폴백 (AI 실패 시) — 테이블 파싱 → 품질 검증 → 단건 파싱 순서 */
           const tableRows=parseVisionTable(visionRes);
@@ -4852,6 +4965,7 @@ async function confirmImages(){
           }
 
           if(tableRecords&&tableRecords.length>=1&&tableQualityOk){
+            const cardRecords=[];
             for(const parsed of tableRecords){
               const r=emptyRec("이미지");
               r.thumb=p.dataUrl;
@@ -4871,10 +4985,14 @@ async function confirmImages(){
               r.웹주소=parsed.웹주소||"";
               r.업종=parsed.업종||"";
               r.status="완료";
-              pushRecord(r);
+              r._pipeline="IMG";
+              r._parserPath="vision-table";
+              cardRecords.push(r);
             }
+            const finalRecords=normalizeBusinessCardImageRecords(cardRecords, ocrFullText);
+            for(const r of finalRecords) pushRecord(r);
             successCount++;
-            toast(`📊 정규식: ${tableRecords.length}건 추출됨`,"success");
+            toast(`📊 정규식: ${finalRecords.length}건 추출됨`,"success");
           }else{
             const parsed=parseBusinessCard(ocrFullText);
             const r=emptyRec("이미지");
@@ -4890,7 +5008,9 @@ async function confirmImages(){
             r.웹주소=parsed.웹주소;
             r.업종=parsed.업종;
             r.status="완료";
-            pushRecord(r);
+            r._pipeline="IMG";
+            r._parserPath="vision-business-card";
+            pushRecord(normalizeBusinessCardImageRecords([r], ocrFullText)[0]);
             successCount++;
           }
         }
@@ -4921,7 +5041,9 @@ async function confirmImages(){
         r.웹주소=parsed.웹주소;
         r.업종=parsed.업종;
         r.status="완료";
-        pushRecord(r);
+        r._pipeline="IMG";
+        r._parserPath="tesseract-business-card";
+        pushRecord(normalizeBusinessCardImageRecords([r], text)[0]);
         successCount++;
       }
     }catch(e){
