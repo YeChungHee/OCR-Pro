@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.39 — 전시회 업종 필드 보호 핫픽스</title>
+<title>OCR Pro v9.40 — 전시회 아이템 필드 연동</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.39</span>
+  <span class="ver">v9.40</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -5495,6 +5495,7 @@ function exportExcel(){
       "Organization - 기업형태":     r.기업형태||"",
       "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
       "Organization - 유입경로_상세":r.부스번호?(exh+" "+r.부스번호).trim():exh,
+      "Organization - 아이템":       r._expoIndustryText||"",
       "Organization - FlowScore":    r.flowScore||"",
       "Organization - 매출(억)":     r.매출||"",
       "Organization - 영업이익":     r.영업이익||"",
@@ -5669,6 +5670,7 @@ async function pushToSalesmap() {
       if (r.매출)      fieldList.push({ name: "매출(억)",   stringValue: String(r.매출) });
       if (r.설립일)    fieldList.push({ name: "설립일자",   stringValue: r.설립일 });
       if (r.부스번호)  fieldList.push({ name: "부스번호",   stringValue: r.부스번호 });
+      if (r._expoIndustryText) fieldList.push({ name: "아이템", stringValue: r._expoIndustryText });
       if (r.flowScore) fieldList.push({ name: "FlowScore",  stringValue: String(r.flowScore) });
       if (r.영업이익)  fieldList.push({ name: "영업이익",   stringValue: String(r.영업이익) });
       // 유입경로 — 항상 포함
@@ -7210,6 +7212,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.40",
+    date: "2026-05-10 00:24",
+    title: "전시회 아이템 필드 연동",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "전시회 원문 구분·취급품목(_expoIndustryText)을 세일즈맵 회사 필드 '아이템'으로 전송" },
+      { type: "feat", text: "세일즈맵 엑셀 내보내기에 Organization - 아이템 컬럼 추가" },
+      { type: "fix", text: "업종 필드는 계속 보호 — 세일즈맵 선택 분류값 외 자유 텍스트를 업종에 입력하지 않음" }
+    ],
+    learnLog: [
+      { text: "세일즈맵 '아이템' 필드가 회사 정보 카테고리의 텍스트 필드임을 확인하고 전시회 품목 저장 대상으로 채택" }
+    ]
+  },
   {
     version: "v9.39",
     date: "2026-05-10 00:18",
