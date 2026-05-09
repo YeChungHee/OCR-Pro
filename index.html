@@ -905,7 +905,7 @@ function xhrPost(url, jsonBody, timeoutMs = 30000) {
 
 /* API 연결 상태 진단 — XHR 기반 */
 async function testApiConnection() {
-  const results = { network: false, visionApi: false, geminiApi: false, workerApi: false, details: [] };
+  const results = { network: false, visionApi: false, geminiApi: false, biznoApi: false, ntsApi: false, workerApi: false, details: [] };
 
   // 1) Vision API 연결 확인
   if (getVisionKey()) {
@@ -924,32 +924,6 @@ async function testApiConnection() {
     }
   } else {
     results.details.push("❌ Vision API: Key 미설정 — OCR 기능 사용 불가");
-  }
-
-  // 3) bizno.net API 연결 확인 (key 유무 관계없이 항상 표시)
-  const biznoKey = getBiznoKey();
-  if (biznoKey) {
-    try {
-      const bizUrl = `${BIZNO_API_URL}?key=${biznoKey}&gb=3&q=${encodeURIComponent("삼성")}&type=json&status=Y`;
-      const bizResp = await fetch(bizUrl, { signal: AbortSignal.timeout(8000) });
-      if (bizResp.ok) {
-        const bData = await bizResp.json().catch(() => null);
-        const rc = bData && (bData.resultCode === 0 || bData.resultCode === "0");
-        if (rc) {
-          results.details.push(`✅ bizno.net API: 정상 연결 (${bData.totalCount || 0}건 조회)`);
-        } else if (bData && bData.resultCode === -1) {
-          results.details.push(`❌ bizno.net API: Key 인증 실패 — ${bData.resultMsg || '미등록 사용자'}\n   bizno.net/api 에서 새 Key를 발급받아 ⚙️ 설정에 입력하세요`);
-        } else {
-          results.details.push(`⚠️ bizno.net API: 오류 ${bData?.resultCode} — ${bData?.resultMsg || "Key를 확인하세요"}`);
-        }
-      } else {
-        results.details.push(`⚠️ bizno.net API: HTTP ${bizResp.status}`);
-      }
-    } catch (e) {
-      results.details.push("❌ bizno.net API: 연결 실패 — " + e.message);
-    }
-  } else {
-    results.details.push("❌ bizno.net API: Key 미설정\n   bizno.net/api 에서 무료 발급 → ⚙️ 설정에 입력하세요");
   }
 
   // 2) Gemini API 연결 확인
@@ -974,8 +948,58 @@ async function testApiConnection() {
     results.details.push("❌ Gemini API: Key 미설정 — AI 기업정보 검색 불가");
   }
 
+  // 3) bizno.net API 연결 확인 — Worker 미사용, 직접 호출만 수행
+  const biznoKey = getBiznoKey();
+  if (biznoKey) {
+    try {
+      const bData = await fetchBiznoJson(biznoKey, "삼성", 8000);
+      const rc = bData && (bData.resultCode === 0 || bData.resultCode === "0");
+      if (rc) {
+        results.biznoApi = true;
+        results.details.push(`✅ bizno.net API: 정상 연결 (${bData.totalCount || 0}건 조회, 직접 호출)`);
+      } else if (bData && bData.resultCode === -1) {
+        results.details.push(`❌ bizno.net API: Key 인증 실패 — ${bData.resultMsg || '미등록 사용자'}\n   bizno.net/api 에서 새 Key를 발급받아 ⚙️ 설정에 입력하세요`);
+      } else {
+        results.details.push(`⚠️ bizno.net API: 오류 ${bData?.resultCode} — ${bData?.resultMsg || "Key를 확인하세요"}`);
+      }
+    } catch (e) {
+      results.details.push("❌ bizno.net API: 직접 연결 실패 — " + e.message + "\n   Cloudflare Worker는 세일즈맵 업로드 전용입니다. bizno.net Key, 브라우저 네트워크, 확장 프로그램 차단 여부를 확인하세요.");
+    }
+  } else {
+    results.details.push("❌ bizno.net API: Key 미설정\n   bizno.net/api 에서 무료 발급 → ⚙️ 설정에 입력하세요");
+  }
+
+  // 4) 국세청 NTS API 연결 확인 — Worker 미사용, 직접 호출만 수행
+  if (getNtsKey()) {
+    try {
+      const ntsUrl = `https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey=${encodeURIComponent(NTS_SERVICE_KEY)}`;
+      const r = await xhrPost(ntsUrl, { b_no: ["0000000000"] }, 10000);
+      results.network = true;
+      if (r.ok) {
+        results.ntsApi = true;
+        results.details.push("✅ 국세청 API: 정상 연결 (직접 호출)");
+      } else if (r.status === 401 || r.status === 403) {
+        results.details.push("⚠️ 국세청 API: 키 인증 실패 (HTTP " + r.status + ") — data.go.kr 서비스키/활성화 상태 확인");
+      } else {
+        results.details.push("⚠️ 국세청 API: HTTP " + r.status + " — 서비스키 또는 요청 형식 확인");
+      }
+    } catch (e) {
+      results.details.push("❌ 국세청 API: 직접 연결 실패 — " + e.message + "\n   Cloudflare Worker는 세일즈맵 업로드 전용입니다.");
+    }
+  } else {
+    results.details.push("⚠️ 국세청 API: Service Key 미설정 — 사업자 상태 검증은 건너뜀");
+  }
+
+  // 5) Cloudflare Worker 확인 — 세일즈맵 API 업로드 전용
+  if (getWorkerUrl()) {
+    results.workerApi = true;
+    results.details.push("✅ Cloudflare Worker URL: 설정됨 — 세일즈맵 API 업로드 전용");
+  } else {
+    results.details.push("⚠️ Cloudflare Worker URL: 미설정 — 세일즈맵 API 업로드 시에만 필요");
+  }
+
   if (!results.network) {
-    results.details.unshift("❌ 인터넷: 두 API 모두 연결 불가 — Wi-Fi/네트워크를 확인하세요");
+    results.details.unshift("❌ 인터넷: 핵심 API 연결 불가 — Wi-Fi/네트워크를 확인하세요");
   } else {
     results.details.unshift("✅ 인터넷 연결: 정상");
   }
@@ -1272,11 +1296,25 @@ async function ocrHeicWithGemini(base64Data, mimeType){
 
 /* ═══════════════════════════════════════════════════
    bizno.net API — 상호명으로 사업자번호 검증
-   Worker 프록시 모드: GitHub Pages (https) → Cloudflare Worker
-   직접 호출 모드: file:// → bizno.net 직접 XHR
+   Cloudflare Worker 미사용: Worker는 세일즈맵 업로드 전용
+   브라우저에서 bizno.net을 직접 호출
    ═══════════════════════════════════════════════════ */
 const BIZNO_API_URL = "https://bizno.net/api/fapi";
 // Worker는 세일즈맵 등록(salesmapFetch)에서만 사용 — bizno/NTS는 CORS 허용으로 직접 호출
+
+function buildBiznoUrl(apiKey, query) {
+  return `${BIZNO_API_URL}?key=${encodeURIComponent(apiKey)}&gb=3&q=${encodeURIComponent(query)}&type=json&status=Y`;
+}
+
+async function fetchBiznoJson(apiKey, query, timeoutMs = 10000) {
+  const bizUrl = buildBiznoUrl(apiKey, query);
+  const resp = await fetch(bizUrl, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const text = await resp.text();
+  console.log(`[Bizno] "${query}" 직접 응답:`, text.substring(0, 500));
+  try { return JSON.parse(text); }
+  catch (pe) { throw new Error("JSON 파싱 실패"); }
+}
 
 async function callBiznoAPI(companyName) {
   if (!companyName) return null;
@@ -1284,25 +1322,14 @@ async function callBiznoAPI(companyName) {
   if (cleanName.length < 2) return null;
 
   try {
-    // bizno.net은 CORS 허용(access-control-allow-origin: *)이므로 직접 호출 가능
-    const bizUrl = `${BIZNO_API_URL}?key=${BIZNO_API_KEY}&gb=3&q=${encodeURIComponent(cleanName)}&type=json&status=Y`;
-    const resp = await fetch(bizUrl, { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const text = await resp.text();
-    console.log(`[Bizno] "${cleanName}" 응답:`, text.substring(0, 500));
-
-    let data;
-    try { data = JSON.parse(text); } catch (pe) {
-      console.warn(`[Bizno] JSON 파싱 실패 "${cleanName}":`, pe.message);
-      return null;
-    }
+    const data = await fetchBiznoJson(BIZNO_API_KEY, cleanName, 10000);
 
     if (data.resultCode !== 0 && data.resultCode !== "0") {
       console.warn(`[Bizno] API 오류: ${data.resultCode} - ${data.resultMsg || ""}`);
       return null;
     }
 
-    const items = data.items || [];
+    const items = Array.isArray(data.items) ? data.items : [];
     const totalCount = data.totalCount || items.length;
     console.log(`[Bizno] "${cleanName}" → ${totalCount}건, items:`, items.length);
     if (items.length === 0) return null;
@@ -5403,13 +5430,24 @@ async function salesmapFetch(path, method, body, token) {
 
   // Cloudflare Worker 프록시 경유 (CORS 우회)
   if (workerUrl) {
-    const res = await fetch(workerUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: targetUrl, method, headers, body: body || null })
-    });
-    if (!res.ok) throw new Error(`Worker ${res.status}: ${await res.text()}`);
-    return res.json();
+    const base = workerUrl.replace(/\/$/, "");
+    const payload = JSON.stringify({ url: targetUrl, method, headers, body: body || null });
+    let lastErr = null;
+    for (const endpoint of [base, `${base}/proxy`]) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload
+        });
+        if (!res.ok) throw new Error(`Worker ${res.status}: ${await res.text()}`);
+        return res.json();
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[SalesMap Worker 실패] ${endpoint}:`, e.message);
+      }
+    }
+    throw lastErr || new Error("SalesMap Worker 호출 실패");
   }
 
   // 직접 호출 (로컬 file:// 환경)
@@ -5636,7 +5674,11 @@ $("#apiTestBtn").onclick=async()=>{
       existing.style.cssText="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1.5px solid var(--bdr2);border-radius:14px;padding:20px 24px;z-index:1000;min-width:320px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.18);font-size:13px;line-height:2";
       document.body.appendChild(existing);
     }
-    const allOk=r.network&&r.visionApi&&r.geminiApi;
+    const allOk = r.network
+      && r.visionApi
+      && r.geminiApi
+      && (!getBiznoKey() || r.biznoApi)
+      && (!getNtsKey() || r.ntsApi);
     const title=allOk?"✅ API 연결 정상":(!r.network?"❌ 인터넷 연결 불가":"⚠️ 일부 연결 문제");
     existing.innerHTML=`<div style="font-weight:700;font-size:14px;margin-bottom:10px">${title}</div>`
       +r.details.map(d=>`<div style="white-space:pre-wrap">${d}</div>`).join("")
