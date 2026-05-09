@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.38 — 전시회 테이블 컬럼 분류 핫픽스</title>
+<title>OCR Pro v9.39 — 전시회 업종 필드 보호 핫픽스</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.38</span>
+  <span class="ver">v9.39</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2538,8 +2538,8 @@ function pushRecord(rec) {
     else rec.담당직함 = rec.담당자 + " / " + rec.담당직함;
     rec.담당자 = "";
   }
-  // 업종 자동 태깅 (빈 경우)
-  if (!rec.업종)    rec.업종    = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
+  // 업종 자동 태깅 (빈 경우) — 전시회 원문 품목은 SalesMap 분류값과 다르므로 보호
+  if (!rec.업종 && !rec._skipIndustryAuto) rec.업종 = autoClassifyIndustry(rec.회사명, rec.웹주소||"");
   // 신뢰도 자동 계산 (빈 경우)
   if (!rec.신뢰도)  rec.신뢰도  = calcReliability(rec);
   records.push(rec);
@@ -6810,7 +6810,7 @@ async function prefetchBbsDetails(companies, batchSize, delayMs) {
   return htmls;
 }
 
-function composeExpoIndustry(category, product, fallback) {
+function composeExpoIndustryText(category, product, fallback) {
   const parts = [category, product, fallback]
     .map(v => (v || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
@@ -6833,7 +6833,11 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
     rec.회사명   = comp.회사명   || '';
     rec.영문명   = comp.영문명   || '';
     rec.부스번호 = comp.부스번호 || '';
-    rec.업종     = composeExpoIndustry(comp.카테고리, comp.전시품, comp.업종);
+    rec.업종     = ''; // SalesMap 허용 분류와 불일치하면 업로드 오류가 나므로 원문 품목을 넣지 않음
+    rec._skipIndustryAuto = true;
+    rec._expoCategory     = comp.카테고리 || '';
+    rec._expoItems        = comp.전시품 || '';
+    rec._expoIndustryText = composeExpoIndustryText(comp.카테고리, comp.전시품, comp.업종);
     rec.웹주소   = comp.웹주소   || '';
     rec.담당자   = comp.담당자   || '';
     rec.전화     = comp.전화     || '';
@@ -6855,7 +6859,9 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
             if (bd.부스번호)  rec.부스번호  = bd.부스번호;
             if (bd.웹주소)    rec.웹주소    = bd.웹주소;
             if (bd.전시품 || bd.카테고리) {
-              rec.업종 = composeExpoIndustry(bd.카테고리 || comp.카테고리, bd.전시품 || comp.전시품, comp.업종);
+              rec._expoCategory     = bd.카테고리 || comp.카테고리 || '';
+              rec._expoItems        = bd.전시품 || comp.전시품 || '';
+              rec._expoIndustryText = composeExpoIndustryText(rec._expoCategory, rec._expoItems, comp.업종);
             }
             if (bd.영문명 && !rec.영문명) rec.영문명 = bd.영문명;
           } else {
@@ -6867,7 +6873,7 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
             if (d.이메일)  rec.이메일  = d.이메일;
             if (d.웹주소 && !rec.웹주소) rec.웹주소 = d.웹주소;
             if (d.설립일)  rec.설립일  = d.설립일;
-            if (d.업종 && !rec.업종) rec.업종 = d.업종;
+            if (d.업종 && !rec._expoIndustryText) rec._expoIndustryText = d.업종;
             if (d.직원수)  rec.직원수  = d.직원수;
           }
         }
@@ -7204,6 +7210,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.39",
+    date: "2026-05-10 00:18",
+    title: "전시회 업종 필드 보호 핫픽스",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "전시회 원문 구분·취급품목을 업종 필드에 직접 저장하지 않도록 차단 — 세일즈맵 허용 분류값과 불일치해 업로드 오류가 나는 위험 제거" },
+      { type: "fix", text: "전시회 레코드는 pushRecord()의 업종 자동 태깅을 건너뛰도록 _skipIndustryAuto 적용" },
+      { type: "improve", text: "전시회 원문 분류는 _expoCategory, _expoItems, _expoIndustryText 메타 필드로만 보존해 향후 전용 검증 리포트에서 활용" }
+    ],
+    learnLog: [
+      { text: "세일즈맵 등록 시 업종 필드는 정해진 분류항목과 일치해야 하므로, 전시회 사이트의 자유 텍스트 품목을 업종에 넣지 않는 정책으로 수정" }
+    ]
+  },
   {
     version: "v9.38",
     date: "2026-05-09 23:58",
