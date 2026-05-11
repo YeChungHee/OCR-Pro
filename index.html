@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.41 — 전시회 이메일 추적 1차 구현</title>
+<title>OCR Pro v9.42 — 파이프라인별 독립 학습엔진</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.41</span>
+  <span class="ver">v9.42</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2425,6 +2425,65 @@ function calcReliability(rec) {
 /* 직능 분류어 패턴 — 담당자 필드에 들어오면 안 되는 단어들 */
 const ROLE_LABEL_RE = /총괄$|지원$|본부$|센터$|팀$|실$|부$|부문$|사업부$|^경영$|^영업$|^기획$|^마케팅$|^기술$/;
 
+/* ═══════════════════════════════════════════════════
+   v9.42 파이프라인별 독립 학습엔진 등록부
+   — 엔진별 namespace와 학습 이벤트를 분리해 회귀 영향 범위를 제한
+   ═══════════════════════════════════════════════════ */
+const PIPELINE_LEARNING_ENGINE_CONFIG = {
+  image:    { displayName: "CardSplitLearner",     codeName: "cardSplitLearner",     namespace: "ocrpro.learn.cardSplit.v1" },
+  qr:       { displayName: "QRContactLearner",     codeName: "qrContactLearner",     namespace: "ocrpro.learn.qrContact.v1" },
+  document: { displayName: "DocumentTableLearner", codeName: "documentTableLearner", namespace: "ocrpro.learn.documentTable.v1" },
+  url:      { displayName: "URLIdentityLearner",   codeName: "urlIdentityLearner",   namespace: "ocrpro.learn.urlIdentity.v1" },
+  expo:     { displayName: "ExpoLeadLearner",      codeName: "expoLeadLearner",      namespace: "ocrpro.learn.expoLead.v1" }
+};
+
+function safeLearningRead(namespace) {
+  try {
+    return JSON.parse(localStorage.getItem(namespace) || "[]");
+  } catch (_) {
+    return [];
+  }
+}
+
+function safeLearningAppend(namespace, event, maxItems = 300) {
+  try {
+    const list = safeLearningRead(namespace);
+    list.push({ ...event, createdAt: new Date().toISOString() });
+    localStorage.setItem(namespace, JSON.stringify(list.slice(-maxItems)));
+  } catch (e) {
+    console.warn("[PipelineLearning] 저장 실패", namespace, e.message);
+  }
+}
+
+function createPipelineLearner(config) {
+  return {
+    ...config,
+    version: "1.0.0",
+    tagRecord(rec, evidence = {}) {
+      if (!rec) return rec;
+      rec._learningEngine = this.displayName;
+      rec._learningNamespace = this.namespace;
+      if (evidence.parserPath && !rec._parserPath) rec._parserPath = evidence.parserPath;
+      return rec;
+    },
+    learn(event) {
+      safeLearningAppend(this.namespace, { engine: this.displayName, version: this.version, ...event });
+    }
+  };
+}
+
+const QRContactLearner = createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.qr);
+const DocumentTableLearner = createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.document);
+const URLIdentityLearner = createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.url);
+const ExpoLeadLearner = {
+  ...createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.expo),
+  tagRecord(rec, evidence = {}) {
+    createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.expo).tagRecord.call(this, rec, evidence);
+    rec._skipIndustryAuto = true;
+    return rec;
+  }
+};
+
 /* 명함 이미지 OCR 전용 정규화 — QR/문서/URL/전시회 경로에서는 호출하지 않음 */
 function extractCeoPersonTitle(text) {
   const s = String(text || "").replace(/\s+/g, " ").trim();
@@ -2486,46 +2545,120 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
   return rec;
 }
 
+const CardSplitLearner = {
+  ...createPipelineLearner(PIPELINE_LEARNING_ENGINE_CONFIG.image),
+  shouldMergeAsSingleCard(list, rawText = "") {
+    if (!Array.isArray(list) || list.length <= 1) return false;
+    const thumbValues = list.map(r => r.thumb).filter(Boolean);
+    const sameThumb = thumbValues.length >= 2 && new Set(thumbValues).size === 1;
+    const contactKeys = ["휴대폰", "전화", "이메일", "웹주소", "사업자번호"];
+    const sharedContact = contactKeys.some(k => {
+      const values = list.map(r => String(r[k] || "").trim()).filter(Boolean);
+      return values.length >= 2 && new Set(values).size < values.length;
+    });
+    const hasPersonOnly = list.some(r => !r.회사명 && (r.담당자 || r.대표자 || r.담당직함));
+    const hasCompany = list.some(r => cardCompanyScore(r) >= 20);
+    const hasCompanyPersonSplit = list.some(r => extractCeoPersonTitle(r.회사명)) || (hasCompany && hasPersonOnly);
+    const hasEnglishCompanyOnly = list.some(r => r.회사명 && /^[A-Za-z0-9&.,' -]+$/.test(r.회사명) && isOfficialCompanyNameForCard(r.회사명));
+    const isSingleRawInput = !!rawText && String(rawText).length >= 10;
+    return sameThumb || sharedContact || hasCompanyPersonSplit || hasEnglishCompanyOnly || isSingleRawInput;
+  },
+  normalizeRecords(recs, rawText = "") {
+    const list = (recs || []).filter(Boolean).map(r => this.tagRecord(normalizeBusinessCardImageRecord(r, rawText), {
+      parserPath: r._parserPath || "card-split"
+    }));
+    if (list.length <= 1) return list;
+    if (!this.shouldMergeAsSingleCard(list, rawText)) {
+      return list.map(r => {
+        r._needsReview = true;
+        r._learnable = false;
+        return r;
+      });
+    }
+
+    let base = list[0];
+    for (const rec of list) {
+      if (cardCompanyScore(rec) > cardCompanyScore(base)) base = rec;
+    }
+
+    const meta = {
+      needsReview: list.some(r => r._needsReview),
+      learnable: list.every(r => r._learnable !== false),
+      parserPaths: [...new Set(list.map(r => r._parserPath).filter(Boolean))]
+    };
+
+    for (const rec of list) {
+      if (rec === base) continue;
+      const personFromCompany = extractCeoPersonTitle(rec.회사명);
+      if (personFromCompany) {
+        if (!base.대표자) base.대표자 = personFromCompany.name;
+        if (!base.담당직함) base.담당직함 = personFromCompany.title;
+      } else if (!base.회사명 && rec.회사명) {
+        base.회사명 = rec.회사명;
+      } else if (rec.회사명 && /^[A-Za-z0-9&.,' -]+$/.test(rec.회사명) && !base.영문명) {
+        base.영문명 = rec.회사명;
+      }
+
+      for (const k of ["영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","주소","웹주소","업종","기업형태","매출","영업이익","flowScore","부스번호"]) {
+        if (!base[k] && rec[k]) base[k] = rec[k];
+      }
+      if (rec.대표자 && rec.대표자 !== base.담당자 && !base.대표자) base.대표자 = rec.대표자;
+    }
+
+    normalizeBusinessCardImageRecord(base, rawText);
+    this.tagRecord(base, { parserPath: meta.parserPaths.join("+") || "card-split" });
+    base._businessCardMergedCount = list.length;
+    if (meta.parserPaths.length) base._parserPath = meta.parserPaths.join("+");
+    if (meta.needsReview) base._needsReview = true;
+    base._learnable = meta.learnable;
+    this.learn({
+      eventType: "normalizeRecords",
+      decision: "merged",
+      inputCount: list.length,
+      outputCount: 1,
+      parserPaths: meta.parserPaths
+    });
+    return [base];
+  }
+};
+
 function normalizeBusinessCardImageRecords(recs, rawText = "") {
-  const list = (recs || []).filter(Boolean).map(r => normalizeBusinessCardImageRecord(r, rawText));
-  if (list.length <= 1) return list;
-
-  let base = list[0];
-  for (const rec of list) {
-    if (cardCompanyScore(rec) > cardCompanyScore(base)) base = rec;
-  }
-
-  const meta = {
-    needsReview: list.some(r => r._needsReview),
-    learnable: list.every(r => r._learnable !== false),
-    parserPaths: [...new Set(list.map(r => r._parserPath).filter(Boolean))]
-  };
-
-  for (const rec of list) {
-    if (rec === base) continue;
-    const personFromCompany = extractCeoPersonTitle(rec.회사명);
-    if (personFromCompany) {
-      if (!base.대표자) base.대표자 = personFromCompany.name;
-      if (!base.담당직함) base.담당직함 = personFromCompany.title;
-    } else if (!base.회사명 && rec.회사명) {
-      base.회사명 = rec.회사명;
-    }
-
-    for (const k of ["영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","주소","웹주소","업종","기업형태","매출","영업이익","flowScore","부스번호"]) {
-      if (!base[k] && rec[k]) base[k] = rec[k];
-    }
-    if (rec.대표자 && rec.대표자 !== base.담당자 && !base.대표자) base.대표자 = rec.대표자;
-  }
-
-  normalizeBusinessCardImageRecord(base, rawText);
-  base._businessCardMergedCount = list.length;
-  if (meta.parserPaths.length) base._parserPath = meta.parserPaths.join("+");
-  if (meta.needsReview) base._needsReview = true;
-  base._learnable = meta.learnable;
-  return [base];
+  return CardSplitLearner.normalizeRecords(recs, rawText);
 }
 
+const PipelineLearningRegistry = {
+  engines: {
+    image: CardSplitLearner,
+    qr: QRContactLearner,
+    document: DocumentTableLearner,
+    url: URLIdentityLearner,
+    expo: ExpoLeadLearner
+  },
+  sourceToKey(source) {
+    const s = String(source || "").toLowerCase();
+    if (s === "이미지" || s === "image" || s === "img") return "image";
+    if (s === "qr" || s === "qrcode" || s === "qr코드") return "qr";
+    if (s === "문서" || s === "document") return "document";
+    if (s === "url") return "url";
+    if (s === "전시회" || s === "expo") return "expo";
+    return "";
+  },
+  engineForRecord(rec) {
+    const key = rec?._pipeline === "IMG" ? "image" : this.sourceToKey(rec?.source);
+    return this.engines[key] || null;
+  },
+  tagRecord(rec, evidence = {}) {
+    const engine = this.engineForRecord(rec);
+    return engine ? engine.tagRecord(rec, evidence) : rec;
+  },
+  learnFromRecord(rec, event = {}) {
+    const engine = this.engineForRecord(rec);
+    if (engine) engine.learn({ eventType: "recordPrepared", source: rec.source, parserPath: rec._parserPath || "", ...event });
+  }
+};
+
 function pushRecord(rec) {
+  PipelineLearningRegistry.tagRecord(rec);
   const dup = findDuplicate(rec);
   if (dup) {
     rec._dupOf = dup.id;
@@ -7411,6 +7544,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.42",
+    date: "2026-05-11 00:00",
+    title: "입력 파이프라인별 독립 학습엔진",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "CardSplitLearner, QRContactLearner, DocumentTableLearner, URLIdentityLearner, ExpoLeadLearner 5개 학습엔진명과 namespace 고정" },
+      { type: "feat", text: "PipelineLearningRegistry 추가 — 입력 source에 따라 각 레코드를 해당 학습엔진으로 태깅" },
+      { type: "improve", text: "명함 파이프라인은 CardSplitLearner가 단일 명함 오분리 병합을 담당하도록 구조화" },
+      { type: "fix", text: "전시회 레코드는 ExpoLeadLearner 태깅 시에도 업종 자동분류 보호 정책(_skipIndustryAuto)을 유지" }
+    ],
+    learnLog: [
+      { text: "명함·QR·문서·URL·전시회 입력 파이프라인의 학습 데이터를 같은 OCRLearner에 섞지 않고, 독립 엔진 단위로 지속 고도화하는 구조를 도입" }
+    ]
+  },
   {
     version: "v9.41",
     date: "2026-05-11 00:00",
