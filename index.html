@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.42 — 파이프라인별 독립 학습엔진</title>
+<title>OCR Pro v9.43 — 핵심 필드 우선순위 학습</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.42</span>
+  <span class="ver">v9.43</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2426,15 +2426,23 @@ function calcReliability(rec) {
 const ROLE_LABEL_RE = /총괄$|지원$|본부$|센터$|팀$|실$|부$|부문$|사업부$|^경영$|^영업$|^기획$|^마케팅$|^기술$/;
 
 /* ═══════════════════════════════════════════════════
-   v9.42 파이프라인별 독립 학습엔진 등록부
-   — 엔진별 namespace와 학습 이벤트를 분리해 회귀 영향 범위를 제한
+   v9.43 파이프라인별 독립 학습엔진 등록부
+   — 엔진별 namespace와 핵심 추출 필드 우선순위를 분리 관리
    ═══════════════════════════════════════════════════ */
+const CORE_EXTRACTION_FIELD_PRIORITY = [
+  { key: "회사명", label: "업체명(회사명)", weight: 30 },
+  { key: "사업자번호", label: "사업자번호", weight: 20 },
+  { key: "대표자", label: "대표자", weight: 15 },
+  { key: "이메일", label: "이메일", weight: 20 },
+  { key: "연락처", label: "연락처", fields: ["휴대폰", "전화"], weight: 15 }
+];
+
 const PIPELINE_LEARNING_ENGINE_CONFIG = {
-  image:    { displayName: "CardSplitLearner",     codeName: "cardSplitLearner",     namespace: "ocrpro.learn.cardSplit.v1" },
-  qr:       { displayName: "QRContactLearner",     codeName: "qrContactLearner",     namespace: "ocrpro.learn.qrContact.v1" },
-  document: { displayName: "DocumentTableLearner", codeName: "documentTableLearner", namespace: "ocrpro.learn.documentTable.v1" },
-  url:      { displayName: "URLIdentityLearner",   codeName: "urlIdentityLearner",   namespace: "ocrpro.learn.urlIdentity.v1" },
-  expo:     { displayName: "ExpoLeadLearner",      codeName: "expoLeadLearner",      namespace: "ocrpro.learn.expoLead.v1" }
+  image:    { displayName: "CardSplitLearner",     codeName: "cardSplitLearner",     namespace: "ocrpro.learn.cardSplit.v1",     criticalFields: CORE_EXTRACTION_FIELD_PRIORITY },
+  qr:       { displayName: "QRContactLearner",     codeName: "qrContactLearner",     namespace: "ocrpro.learn.qrContact.v1",     criticalFields: CORE_EXTRACTION_FIELD_PRIORITY },
+  document: { displayName: "DocumentTableLearner", codeName: "documentTableLearner", namespace: "ocrpro.learn.documentTable.v1",  criticalFields: CORE_EXTRACTION_FIELD_PRIORITY },
+  url:      { displayName: "URLIdentityLearner",   codeName: "urlIdentityLearner",   namespace: "ocrpro.learn.urlIdentity.v1",    criticalFields: CORE_EXTRACTION_FIELD_PRIORITY },
+  expo:     { displayName: "ExpoLeadLearner",      codeName: "expoLeadLearner",      namespace: "ocrpro.learn.expoLead.v1",       criticalFields: CORE_EXTRACTION_FIELD_PRIORITY }
 };
 
 function safeLearningRead(namespace) {
@@ -2459,10 +2467,41 @@ function createPipelineLearner(config) {
   return {
     ...config,
     version: "1.0.0",
+    evaluateCriticalFields(rec) {
+      const missing = [];
+      const present = [];
+      let score = 0;
+      let total = 0;
+      for (const item of this.criticalFields || []) {
+        total += item.weight || 0;
+        const fields = item.fields || [item.key];
+        const hasValue = fields.some(k => String(rec?.[k] || "").trim().length > 0);
+        if (hasValue) {
+          present.push(item.label);
+          score += item.weight || 0;
+        } else {
+          missing.push(item.label);
+        }
+      }
+      return {
+        priority: (this.criticalFields || []).map(item => item.label),
+        present,
+        missing,
+        score,
+        maxScore: total,
+        ratio: total ? Math.round((score / total) * 100) : 0
+      };
+    },
     tagRecord(rec, evidence = {}) {
       if (!rec) return rec;
       rec._learningEngine = this.displayName;
       rec._learningNamespace = this.namespace;
+      const critical = this.evaluateCriticalFields(rec);
+      rec._criticalFieldPriority = critical.priority.join(" > ");
+      rec._criticalPresentFields = critical.present.join(", ");
+      rec._criticalMissingFields = critical.missing.join(", ");
+      rec._criticalExtractScore = `${critical.score}/${critical.maxScore}`;
+      rec._criticalExtractRatio = critical.ratio;
       if (evidence.parserPath && !rec._parserPath) rec._parserPath = evidence.parserPath;
       return rec;
     },
@@ -7544,6 +7583,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.43",
+    date: "2026-05-11 00:00",
+    title: "핵심 필드 우선순위 학습",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "모든 파이프라인 학습엔진에 공통 핵심 추출 우선순위 적용: 업체명, 사업자번호, 대표자, 이메일, 연락처" },
+      { type: "feat", text: "레코드별 _criticalFieldPriority, _criticalMissingFields, _criticalExtractScore 메타 태깅 추가" },
+      { type: "improve", text: "각 엔진이 추출 성공 여부를 단순 완료가 아니라 핵심 필드 확보율 기준으로 평가할 수 있도록 기반 마련" }
+    ],
+    learnLog: [
+      { text: "명함·QR·문서·URL·전시회 모든 입력엔진의 최우선 목표 데이터를 업체명, 사업자번호, 대표자, 이메일, 연락처로 통일" }
+    ]
+  },
   {
     version: "v9.42",
     date: "2026-05-11 00:00",
