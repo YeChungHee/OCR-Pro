@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.43 — 핵심 필드 우선순위 학습</title>
+<title>OCR Pro v9.44 — 세일즈맵 DB 저장 정합성 핫픽스</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.43</span>
+  <span class="ver">v9.44</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -5636,48 +5636,7 @@ function exportExcel(){
 
   const checked = records.filter(r => r.checked);
   if (!checked.length) { toast("체크된 항목이 없습니다. 내보낼 항목을 체크해 주세요.", "error"); return; }
-  const rows=checked.map(r=>{
-    const 직함원본 = (r.담당직함||"").trim();
-    const 이름원본 = (r.담당자||"").trim();
-    const isCeo    = isCeoTitle(직함원본);
-    const 대표자명 = isCeo ? (이름원본||r.대표자||"") : (r.대표자||"");
-    // ★ v9.30: 대표자와 담당자가 동일 인물이면 담당직원 컬럼 비움 (중복 방지)
-    const 담당직원 = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
-
-    // 전화 라우팅
-    const allPhones  = [r.전화,r.휴대폰].filter(Boolean).map(p=>p.trim()).filter(Boolean);
-    const mobileTel  = allPhones.find(p=>isMobile(p))||"";
-    const landline   = allPhones.find(p=>!isMobile(p))||"";
-
-    // People 이름·직함
-    const peopleName = 담당직원||대표자명;
-    const people직함 = 직함원본;
-
-    // ── 고정 컬럼 순서 (SalesMap 샘플 기준 + People-이메일) ──
-    return {
-      "Organization - 이름":         r.회사명||"",
-      "Organization - 영문명":       r.영문명||"",
-      "Organization - 사업자번호":   r.사업자번호||"",
-      "Organization - 대표자명":     대표자명,
-      "Organization - 담당직원":     담당직원,
-      "Organization - 담당직함":     담당직원 ? 직함원본 : "",  // 담당직원 없으면 비움
-      "Organization - 전화":         landline,
-      "Organization - 주소":         r.주소||"",
-      "Organization - 웹 주소":      r.웹주소||"",
-      "Organization - 기업형태":     r.기업형태||"",
-      "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
-      "Organization - 유입경로_상세":r.부스번호?(exh+" "+r.부스번호).trim():exh,
-      "Organization - 아이템":       r._expoIndustryText||"",
-      "Organization - FlowScore":    r.flowScore||"",
-      "Organization - 매출(억)":     r.매출||"",
-      "Organization - 영업이익":     r.영업이익||"",
-      "Organization - 설립일자":     r.설립일||"",
-      "People - 이름":               peopleName,
-      "People - 직함":               people직함,
-      "People - 전화":               mobileTel,
-      "People - 이메일":             r.이메일||""
-    };
-  });
+  const rows=checked.map(r=>buildSalesMapPayload(r,{exh}).excelRow);
   const ws=XLSX.utils.json_to_sheet(rows);
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,"세일즈맵");
@@ -5706,6 +5665,98 @@ function isMobile(t) {
   const clean = t.trim().replace(/[\s\-.()+,]/g, "");
   if (/^8210\d{7,8}$/.test(clean)) return true;  // +82-10-... 형식
   return /^0(10|11|16|17|18|19)\d{7,8}$/.test(clean);
+}
+
+function addFieldOnce(fieldList, name, value) {
+  const v = String(value || "").trim();
+  if (!v) return;
+  const existing = fieldList.find(f => f.name === name);
+  if (existing) existing.stringValue = v;
+  else fieldList.push({ name, stringValue: v });
+}
+
+function buildSalesMapPayload(r, context = {}) {
+  const exh = String(context.exh || "").trim();
+  const 직함원본  = (r.담당직함 || "").trim();
+  const 이름원본  = (r.담당자 || "").trim();
+  const isCeo     = isCeoTitle(직함원본);
+  const 대표자명  = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
+  const 담당직원  = (!isCeo && 이름원본 && 이름원본 !== (r.대표자 || "").trim()) ? 이름원본 : "";
+  const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
+  const mobileTel = allPhones.find(p => isMobile(p)) || "";
+  const landlineTel = allPhones.find(p => !isMobile(p)) || "";
+  const peopleName = 담당직원 || 대표자명;
+  const peopleEmail = (r.이메일 || "").trim();
+  const people직함 = 직함원본 || "";
+  const detailSource = r.부스번호 ? `${exh} ${r.부스번호}`.trim() : exh;
+
+  const orgFieldList = [];
+  addFieldOnce(orgFieldList, "대표자명", 대표자명);
+  addFieldOnce(orgFieldList, "담당직원", 담당직원);
+  addFieldOnce(orgFieldList, "담당직함", 담당직원 ? 직함원본 : "");
+  addFieldOnce(orgFieldList, "사업자번호", r.사업자번호);
+  addFieldOnce(orgFieldList, "전화", landlineTel);
+  addFieldOnce(orgFieldList, "주소", r.주소);
+  addFieldOnce(orgFieldList, "웹 주소", r.웹주소);
+  addFieldOnce(orgFieldList, "기업형태", r.기업형태);
+  addFieldOnce(orgFieldList, "매출(억)", r.매출);
+  addFieldOnce(orgFieldList, "설립일자", r.설립일);
+  addFieldOnce(orgFieldList, "부스번호", r.부스번호);
+  addFieldOnce(orgFieldList, "아이템", r._expoIndustryText || r.업종원문 || "");
+  addFieldOnce(orgFieldList, "FlowScore", r.flowScore);
+  addFieldOnce(orgFieldList, "영업이익", r.영업이익);
+  addFieldOnce(orgFieldList, "유입경로", r.source === "전시회" ? "전시회" : "오프/행사");
+  addFieldOnce(orgFieldList, "유입경로_상세", detailSource);
+
+  const peopleFieldList = [];
+  addFieldOnce(peopleFieldList, "직함", people직함);
+  addFieldOnce(peopleFieldList, "전화", mobileTel);
+  addFieldOnce(peopleFieldList, "이메일", peopleEmail);
+
+  const name = (r.회사명 || "").trim();
+  const organizationBody = {
+    name,
+    ...(r.웹주소    ? { website: r.웹주소 } : {}),
+    ...(landlineTel ? { phone: landlineTel } : {}),
+    ...(r.주소      ? { address: r.주소 } : {}),
+    ...(orgFieldList.length ? { fieldList: orgFieldList } : {})
+  };
+  const peopleBody = peopleName ? {
+    name: peopleName,
+    ...(peopleEmail ? { email: peopleEmail } : {}),
+    ...(mobileTel   ? { phone: mobileTel } : {}),
+    ...(peopleFieldList.length ? { fieldList: peopleFieldList } : {})
+  } : null;
+
+  return {
+    name,
+    organizationBody,
+    peopleBody,
+    meta: { 대표자명, 담당직원, peopleName, people직함, mobileTel, landlineTel, peopleEmail },
+    excelRow: {
+      "Organization - 이름":         name,
+      "Organization - 영문명":       r.영문명||"",
+      "Organization - 사업자번호":   r.사업자번호||"",
+      "Organization - 대표자명":     대표자명,
+      "Organization - 담당직원":     담당직원,
+      "Organization - 담당직함":     담당직원 ? 직함원본 : "",
+      "Organization - 전화":         landlineTel,
+      "Organization - 주소":         r.주소||"",
+      "Organization - 웹 주소":      r.웹주소||"",
+      "Organization - 기업형태":     r.기업형태||"",
+      "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
+      "Organization - 유입경로_상세":detailSource,
+      "Organization - 아이템":       r._expoIndustryText||"",
+      "Organization - FlowScore":    r.flowScore||"",
+      "Organization - 매출(억)":     r.매출||"",
+      "Organization - 영업이익":     r.영업이익||"",
+      "Organization - 설립일자":     r.설립일||"",
+      "People - 이름":               peopleName,
+      "People - 직함":               people직함,
+      "People - 전화":               mobileTel,
+      "People - 이메일":             peopleEmail
+    }
+  };
 }
 
 const SALESMAP_BASE = "https://salesmap.kr/api";
@@ -5770,6 +5821,59 @@ async function salesmapFindOrg(name, token) {
   } catch(e) { return null; }
 }
 
+function salesmapRecordFieldMap(data) {
+  const rec = data?.data || data?.record || data?.item || data || {};
+  const map = {};
+  const put = (name, value) => {
+    const v = String(value || "").trim();
+    if (name && v) map[name] = v;
+  };
+  put("이름", rec.name);
+  put("회사명", rec.name);
+  put("전화", rec.phone);
+  put("웹 주소", rec.website);
+  put("주소", rec.address);
+  put("이메일", rec.email);
+  const fields = rec.fieldList || rec.fields || rec.customFields || rec.properties || [];
+  if (Array.isArray(fields)) {
+    fields.forEach(f => {
+      const name = f.name || f.fieldName || f.label || f.key;
+      const value = f.stringValue ?? f.value ?? f.textValue ?? f.numberValue ?? f.dateValue;
+      put(name, value);
+    });
+  }
+  return map;
+}
+
+function sameSalesmapValue(a, b) {
+  const av = String(a || "").trim();
+  const bv = String(b || "").trim();
+  if (!av && !bv) return true;
+  if (!av || !bv) return false;
+  const ad = av.replace(/\D/g, "");
+  const bd = bv.replace(/\D/g, "");
+  if (ad.length >= 8 && bd.length >= 8) return ad === bd;
+  const webNorm = v => v.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+  if (/[./]/.test(av) || /[./]/.test(bv)) return webNorm(av) === webNorm(bv);
+  return av === bv;
+}
+
+async function verifySalesmapReadback(type, id, expected, token) {
+  if (!id) return { status: "unknown", reason: "id 없음" };
+  try {
+    const data = await salesmapFetch(`/v2/${type}/${encodeURIComponent(id)}`, "GET", null, token);
+    const fieldMap = salesmapRecordFieldMap(data);
+    const missing = [];
+    Object.entries(expected || {}).forEach(([field, value]) => {
+      const v = String(value || "").trim();
+      if (v && !sameSalesmapValue(fieldMap[field], v)) missing.push(field);
+    });
+    return missing.length ? { status: "partial", missing } : { status: "ok" };
+  } catch (e) {
+    return { status: "unknown", reason: e.message };
+  }
+}
+
 async function pushToSalesmap() {
   const token = getSalesmapToken();
   if (!token) {
@@ -5796,7 +5900,8 @@ async function pushToSalesmap() {
   numEl.textContent = `0/${targets.length}`;
   $("#salesmapPushBtn").disabled = true;
 
-  let okCount = 0, dupCount = 0, errCount = 0;
+  let okCount = 0, dupCount = 0, errCount = 0, peopleOkCount = 0, peopleErrCount = 0, peopleWarnCount = 0;
+  let verifyOkCount = 0, verifyPartialCount = 0, verifyUnknownCount = 0;
 
   for (let i = 0; i < targets.length; i++) {
     const r = targets[i];
@@ -5811,51 +5916,9 @@ async function pushToSalesmap() {
     logEl.scrollTop = logEl.scrollHeight;
 
     try {
-      // ── 직함 분류 ──
-      const 직함원본  = (r.담당직함 || "").trim();
-      const 이름원본  = (r.담당자   || "").trim();
-      const isCeo     = isCeoTitle(직함원본);
-
-      // CEO급: 대표자명 = 담당자(명함 인물) or 기존 대표자 필드
-      const 대표자명  = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
-      // 비CEO급: 담당직원 = 담당자 이름 (단, 대표자와 동일이면 중복 방지)
-      const 담당직원  = (!isCeo && 이름원본 && 이름원본 !== (r.대표자||"").trim()) ? 이름원본 : "";
-
-      // 전화 라우팅: 010형식→People전용, 유선→Organization전화
-      const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
-      const mobileTel  = allPhones.find(p => isMobile(p)) || "";
-      const landlineTel = allPhones.find(p => !isMobile(p)) || "";
-
-      // People 이름: 담당직원 있으면 담당직원, 없으면 대표자명
-      const peopleName  = 담당직원 || 대표자명;
-      const peopleEmail = (r.이메일 || "").trim();
-      // People 직함: CEO급이면 원본 직함, 비CEO면 담당직함
-      const people직함  = 직함원본 || "";
-
-      // ── 1. 회사(organization) 생성 또는 중복 확인 ──
-      const fieldList = [];
-      if (대표자명)    fieldList.push({ name: "대표자명",   stringValue: 대표자명 });
-      if (담당직원)    fieldList.push({ name: "담당직원",   stringValue: 담당직원 });
-      if (담당직원 && 직함원본) fieldList.push({ name: "담당직함", stringValue: 직함원본 });
-      if (r.사업자번호) fieldList.push({ name: "사업자번호", stringValue: r.사업자번호 });
-      if (r.기업형태)  fieldList.push({ name: "기업형태",   stringValue: r.기업형태 });
-      if (r.매출)      fieldList.push({ name: "매출(억)",   stringValue: String(r.매출) });
-      if (r.설립일)    fieldList.push({ name: "설립일자",   stringValue: r.설립일 });
-      if (r.부스번호)  fieldList.push({ name: "부스번호",   stringValue: r.부스번호 });
-      if (r._expoIndustryText) fieldList.push({ name: "아이템", stringValue: r._expoIndustryText });
-      if (r.flowScore) fieldList.push({ name: "FlowScore",  stringValue: String(r.flowScore) });
-      if (r.영업이익)  fieldList.push({ name: "영업이익",   stringValue: String(r.영업이익) });
-      // 유입경로 — 항상 포함
-      fieldList.push({ name: "유입경로", stringValue: r.source === "전시회" ? "전시회" : "오프/행사" });
-      if (exh) fieldList.push({ name: "유입경로_상세", stringValue: r.부스번호 ? `${exh} ${r.부스번호}`.trim() : exh });
-
-      const orgBody = {
-        name,
-        ...(r.웹주소    ? { website: r.웹주소 }    : {}),
-        ...(landlineTel ? { phone: landlineTel }    : {}),
-        ...(r.주소      ? { address: r.주소 }       : {}),
-        ...(fieldList.length ? { fieldList } : {})
-      };
+      const payload = buildSalesMapPayload(r, { exh });
+      const orgBody = payload.organizationBody;
+      const { peopleBody, meta } = payload;
 
       let orgId = null;
       try {
@@ -5880,25 +5943,63 @@ async function pushToSalesmap() {
         }
       }
 
-      // ── 2. People 생성 — 이름 있고, 전화(010) 또는 이메일 중 하나 필수 ──
-      if (peopleName && (mobileTel || peopleEmail)) {
-        const pfList = [];
-        if (people직함) pfList.push({ name: "직함", stringValue: people직함 });
-        const peopleBody = {
-          name: peopleName,
-          ...(peopleEmail ? { email: peopleEmail } : {}),
-          ...(mobileTel   ? { phone: mobileTel }   : {}),
-          ...(orgId       ? { organizationId: orgId } : {}),
-          ...(pfList.length ? { fieldList: pfList } : {})
+      const orgVerify = await verifySalesmapReadback("organization", orgId, {
+        "사업자번호": r.사업자번호,
+        "전화": meta.landlineTel,
+        "웹 주소": r.웹주소,
+        "주소": r.주소
+      }, token);
+      if (orgVerify.status === "ok") {
+        verifyOkCount++;
+        logLine.textContent += " · 회사 검증완료";
+      } else if (orgVerify.status === "partial") {
+        verifyPartialCount++;
+        logLine.textContent += ` ⚠️ 회사 부분등록: ${orgVerify.missing.join(", ")}`;
+      } else {
+        verifyUnknownCount++;
+        logLine.textContent += " · 회사 검증불가";
+      }
+
+      // ── 2. People 생성 — v9.44: 이름만 있어도 생성, 전화/이메일은 보완 상태로 표시 ──
+      if (peopleBody) {
+        const finalPeopleBody = {
+          ...peopleBody,
+          ...(orgId ? { organizationId: orgId } : {})
         };
         try {
-          await salesmapFetch("/v2/people", "POST", peopleBody, token);
+          const peopleRes = await salesmapFetch("/v2/people", "POST", finalPeopleBody, token);
+          const peopleId = peopleRes?.data?.id || peopleRes?.id || peopleRes?.peopleId || null;
+          peopleOkCount++;
+          const peopleVerify = await verifySalesmapReadback("people", peopleId, {
+            "전화": meta.mobileTel,
+            "이메일": meta.peopleEmail
+          }, token);
+          if (peopleVerify.status === "ok") {
+            verifyOkCount++;
+          } else if (peopleVerify.status === "partial") {
+            verifyPartialCount++;
+            logLine.textContent += ` ⚠️ People 부분등록: ${peopleVerify.missing.join(", ")}`;
+          } else {
+            verifyUnknownCount++;
+            logLine.textContent += " · People 검증불가";
+          }
+          const missingPeopleFields = [];
+          if (!meta.mobileTel) missingPeopleFields.push("전화");
+          if (!meta.peopleEmail) missingPeopleFields.push("이메일");
+          if (missingPeopleFields.length) {
+            peopleWarnCount++;
+            logLine.textContent += ` ⚠️ People 생성됨 — ${missingPeopleFields.join("/")} 보완 필요`;
+          } else {
+            logLine.textContent += " · People 완료";
+          }
         } catch(pErr) {
+          peopleErrCount++;
           console.warn("People 등록 실패:", pErr.message);
+          logLine.textContent += ` ⚠️ People 실패: ${pErr.message}`;
         }
-      } else if (peopleName) {
-        const cur = logLine.textContent;
-        logLine.textContent = cur + " ⚠️ People 전화(010)/이메일 없어 미등록";
+      } else {
+        peopleWarnCount++;
+        logLine.textContent += " ⚠️ People 이름 없어 미등록";
       }
 
     } catch(e) {
@@ -5918,11 +6019,14 @@ async function pushToSalesmap() {
   resEl.innerHTML = `
     <span style="color:var(--grn)">✅ 등록 ${okCount}건</span>&nbsp;&nbsp;
     <span style="color:var(--org)">⚠️ 중복업데이트 ${dupCount}건</span>&nbsp;&nbsp;
-    <span style="color:var(--red)">❌ 실패 ${errCount}건</span>
+    <span style="color:var(--grn)">👤 People ${peopleOkCount}건</span>&nbsp;&nbsp;
+    <span style="color:var(--org)">⚠️ 보완 ${peopleWarnCount}건</span>&nbsp;&nbsp;
+    <span style="color:var(--sub)">🔎 검증 ${verifyOkCount} / 부분 ${verifyPartialCount} / 불가 ${verifyUnknownCount}</span>&nbsp;&nbsp;
+    <span style="color:var(--red)">❌ 실패 ${errCount + peopleErrCount}건</span>
   `;
   $("#salesmapPushBtn").disabled = false;
-  toast(`📤 세일즈맵 등록 완료 — 등록 ${okCount}건 / 중복 ${dupCount}건 / 실패 ${errCount}건`,
-    errCount > 0 ? "" : "success");
+  toast(`📤 세일즈맵 등록 완료 — 회사 ${okCount}건 / People ${peopleOkCount}건 / 보완 ${peopleWarnCount}건 / 실패 ${errCount + peopleErrCount}건`,
+    (errCount + peopleErrCount) > 0 ? "" : "success");
 }
 
 /* ═══════════════════════════════════════════════════
@@ -7583,6 +7687,22 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.44",
+    date: "2026-05-15 09:30",
+    title: "세일즈맵 DB 저장 정합성 핫픽스",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "SalesMap 공통 payload builder 추가 — 엑셀 출력과 API 직접 등록이 같은 Organization/People 필드 라우팅 사용" },
+      { type: "fix", text: "Organization fieldList에 전화, 주소, 웹 주소를 명시 전송 — SalesMap 화면 필드 누락 방지" },
+      { type: "fix", text: "People 생성 조건 완화 — 이름만 있어도 People 레코드 생성, 전화/이메일은 보완 필요 상태로 표시" },
+      { type: "improve", text: "People 등록 성공/보완/실패 카운트를 세일즈맵 등록 결과 패널에 표시" },
+      { type: "improve", text: "SalesMap read-back 검증 추가 — GET 지원 시 필드 일치 확인, 미지원 시 검증불가로 등록 성공과 분리" }
+    ],
+    learnLog: [
+      { text: "모든 입력 파이프라인의 최종 목적을 이메일 마케팅용 SalesMap DB 생성으로 정렬: Organization은 회사명·사업자번호·전화·웹 주소·주소, People은 이름·전화·이메일 중심으로 저장" }
+    ]
+  },
   {
     version: "v9.43",
     date: "2026-05-11 00:00",
