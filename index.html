@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.44 — 세일즈맵 DB 저장 정합성 핫픽스</title>
+<title>OCR Pro v9.45 — 명함 추출 보정·전체 필드 표시</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -78,7 +78,7 @@ body{margin:0;background:var(--bg);color:var(--txt)}
 @keyframes barPulse{from{width:15%}to{width:85%}}
 .tbl-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow-x:auto;margin-bottom:12px}
 .tbl-wrap.hidden{display:none}
-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1200px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:1980px}
 thead{background:var(--card2);position:sticky;top:0;z-index:2}
 .sm-col{display:block;font-size:9px;font-weight:400;color:var(--mut);margin-top:1px;letter-spacing:-.01em}
 th{padding:9px 8px;text-align:left;font-weight:600;color:var(--sub);font-size:11px;border-bottom:2px solid var(--bdr);white-space:nowrap}
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.44</span>
+  <span class="ver">v9.45</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -576,9 +576,15 @@ if(location.protocol==="file:"){
   <th style="min-width:105px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
   <th style="min-width:80px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
   <th style="min-width:80px">담당직원<span class="sm-col">People - 이름</span></th>
-  <th style="min-width:105px">전화(010)<span class="sm-col">People - 전화</span></th>
+  <th style="min-width:90px">직함<span class="sm-col">People - 직함</span></th>
+  <th style="min-width:105px">휴대폰<span class="sm-col">People - 전화</span></th>
+  <th style="min-width:105px">일반전화<span class="sm-col">Organization - 전화</span></th>
   <th style="min-width:145px">이메일<span class="sm-col">People - 이메일</span></th>
   <th style="min-width:120px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
+  <th style="min-width:160px">주소<span class="sm-col">Organization - 주소</span></th>
+  <th style="min-width:120px">업종<span class="sm-col">Organization - 업종</span></th>
+  <th style="min-width:140px">아이템<span class="sm-col">Organization - 아이템</span></th>
+  <th style="min-width:90px">영문명<span class="sm-col">검수 참고</span></th>
   <th style="min-width:55px">신뢰도</th>
   <th style="width:52px">상태</th>
   <th style="width:50px"></th>
@@ -2165,7 +2171,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 /* ═══════════════════════════════════════════════════
    레코드 → 테이블 렌더 (셀 편집 가능)
    ═══════════════════════════════════════════════════ */
-const EDIT_FIELDS=["회사명","담당자","전화","이메일","사업자번호","대표자","업종","기업형태","웹주소","주소"];
+const EDIT_FIELDS=["회사명","영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","업종","아이템","기업형태","웹주소","주소"];
 
 /* ═══════════════════════════════════════════════════
    📧 이메일 안전 추출 — 이미지·스크립트 파일명 오인식 방지
@@ -2344,9 +2350,15 @@ function render(){
       }
       <td contenteditable="true" class="editable" data-field="대표자" data-id="${r.id}">${_ceoName}</td>
       <td contenteditable="true" class="editable" data-field="담당자" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${_contactName}</td>
-      <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}" style="font-size:12px">${mobileP}</td>
+      <td contenteditable="true" class="editable" data-field="담당직함" data-id="${r.id}" style="font-size:12px;color:var(--sub)">${esc(r.담당직함)}</td>
+      <td contenteditable="true" class="editable" data-field="휴대폰" data-id="${r.id}" style="font-size:12px">${esc(_mobileNum)}</td>
+      <td contenteditable="true" class="editable" data-field="전화" data-id="${r.id}" style="font-size:12px">${esc(_landlineNum)}</td>
       <td contenteditable="true" class="editable" data-field="이메일" data-id="${r.id}">${esc(r.이메일)}</td>
       <td contenteditable="true" class="editable" data-field="웹주소" data-id="${r.id}">${esc(r.웹주소)}</td>
+      <td contenteditable="true" class="editable" data-field="주소" data-id="${r.id}" style="font-size:11px;color:var(--sub)">${esc(r.주소)}</td>
+      <td contenteditable="true" class="editable" data-field="업종" data-id="${r.id}" style="font-size:11px">${esc(r.업종)}</td>
+      <td contenteditable="true" class="editable" data-field="아이템" data-id="${r.id}" style="font-size:11px">${esc(r.아이템 || r._expoIndustryText || r.업종원문 || "")}</td>
+      <td contenteditable="true" class="editable" data-field="영문명" data-id="${r.id}" style="font-size:11px;color:var(--sub)">${esc(r.영문명)}</td>
       <td>${relH}</td>
       <td><span class="st ${stCls}">${stIcon} ${esc(r.status)}</span></td>
       <td style="white-space:nowrap">
@@ -2382,7 +2394,7 @@ function showThumb(recId) {
   document.body.appendChild(overlay);
 }
 
-function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",영문명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",부스번호:"",_dupOf:null,_biznoVerified:null,_biznoAlt:""}}
+function emptyRec(src){return{id:uid(),checked:true,status:"대기",thumb:"",source:src,회사명:"",영문명:"",담당자:"",담당직함:"",전화:"",휴대폰:"",이메일:"",사업자번호:"",대표자:"",업종:"",아이템:"",기업형태:"",웹주소:"",주소:"",신뢰도:"",매출:"",영업이익:"",flowScore:"",부스번호:"",_dupOf:null,_biznoVerified:null,_biznoAlt:""}}
 
 /* ═══════════════════════════════════════════════════
    🔍 P3-1: 중복 감지 — 회사명 또는 사업자번호 기준
@@ -2544,6 +2556,7 @@ function cardCompanyScore(rec) {
   const name = String(rec?.회사명 || "").trim();
   if (!name) return 0;
   if (extractCeoPersonTitle(name)) return -100;
+  if (isBadBusinessCardCompanyName(name)) return -80;
   let score = 10;
   if (isOfficialCompanyNameForCard(name)) score += 80;
   if (/[가-힣]/.test(name)) score += 15;
@@ -2553,8 +2566,172 @@ function cardCompanyScore(rec) {
   return score;
 }
 
+const CARD_DOMAIN_COMPANY_HINTS = {
+  aish: "AISH",
+  innos: "INNOS",
+  shuny: "(주)슈니테크",
+  zerocorp: "주식회사제로코퍼레이션",
+  kibo: "기술보증기금"
+};
+
+const CARD_COMPANY_SUFFIX_RE = /(?:㈜|\(주\)|주식회사|유한회사|합자회사|합명회사|재단법인|사단법인|회계사무소|세무회계사무소|보증기금|기술보증기금|코퍼레이션|테크|시스템|솔루션|기금)$/;
+const CARD_ROLE_OR_SLOGAN_RE = /(?:전문기업|전문위원|평가위원|전문평가위원|위원장|위원|최고의|품질|마케팅|비즈니스|커넥터|Connector|Quality|Marketing|Business|Smart\s+Work|Work\s+Hub|All\s+Business)/i;
+const CARD_EN_BUSINESS_WORD_RE = /(?:Quality|Marketing|Business|Smart|Work|Hub|Connector|Innovation|System|Solution|Technology|Network|Enterprise)/i;
+const CARD_FREE_MAIL_DOMAINS = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
+
+function cleanCardLine(line) {
+  return String(line || "")
+    .replace(/[•·●◆◇■□▶▷]/g, " ")
+    .replace(/^(?:Tel|TEL|T\.|Mobile|M\.|HP|Fax|F\.|E-mail|E-Mail|Email|E\.|HomePage|Homepage|Web|URL|H\.)\s*[:.]?\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cardRawLines(rawText = "") {
+  return String(rawText || "")
+    .split(/\n+/)
+    .map(cleanCardLine)
+    .filter(Boolean);
+}
+
+function getCardDomainBase(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  try {
+    const host = new URL(s.startsWith("http") ? s : "https://" + s).hostname;
+    return host.replace(/^www\./i, "").split(".")[0].toLowerCase();
+  } catch (_) {
+    const m = s.match(/@([^@]+)$/) || s.match(/(?:https?:\/\/|www\.)?([a-z0-9-]+)\.(?:co\.kr|or\.kr|go\.kr|com|net|org|io|ai|tech|kr|biz)/i);
+    if (!m) return "";
+    const host = m[1].toLowerCase();
+    return CARD_FREE_MAIL_DOMAINS.has(host) ? "" : host;
+  }
+}
+
+function getCardDomainBases(rec = {}) {
+  return [...new Set([getCardDomainBase(rec.웹주소), getCardDomainBase(rec.이메일)].filter(Boolean))];
+}
+
+function isBadBusinessCardCompanyName(name) {
+  const s = String(name || "").replace(/\s+/g, " ").trim();
+  if (!s) return true;
+  if (extractCeoPersonTitle(s)) return true;
+  if (/^[가-힣]{2,4}$/.test(s) && !CARD_COMPANY_SUFFIX_RE.test(s)) return true;
+  if (CARD_ROLE_OR_SLOGAN_RE.test(s) && !CARD_COMPANY_SUFFIX_RE.test(s) && !isOfficialCompanyNameForCard(s)) return true;
+  if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$/.test(s) && CARD_EN_BUSINESS_WORD_RE.test(s)) return true;
+  if (typeof ROLE_LABEL_RE !== "undefined" && ROLE_LABEL_RE.test(s)) return true;
+  return false;
+}
+
+function isBadBusinessCardPersonName(name) {
+  const s = String(name || "").replace(/\s+/g, " ").trim();
+  if (!s) return false;
+  if (CARD_ROLE_OR_SLOGAN_RE.test(s)) return true;
+  if (CARD_COMPANY_SUFFIX_RE.test(s) || isOfficialCompanyNameForCard(s)) return true;
+  if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$/.test(s) && CARD_EN_BUSINESS_WORD_RE.test(s)) return true;
+  if (typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(s)) return true;
+  if (typeof ROLE_LABEL_RE !== "undefined" && ROLE_LABEL_RE.test(s)) return true;
+  return false;
+}
+
+function cardCandidateScore(name, rec = {}) {
+  const s = String(name || "").trim();
+  if (!s || isBadBusinessCardCompanyName(s)) return -100;
+  let score = 0;
+  if (isOfficialCompanyNameForCard(s)) score += 90;
+  if (CARD_COMPANY_SUFFIX_RE.test(s)) score += 70;
+  if (/[가-힣]/.test(s)) score += 18;
+  if (/^[A-Z0-9]{2,8}$/.test(s)) score += 16;
+  const upperCompact = s.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  for (const base of getCardDomainBases(rec)) {
+    if (upperCompact && (base.includes(upperCompact) || upperCompact.includes(base))) score += 45;
+  }
+  if (rec.웹주소 || rec.이메일) score += 5;
+  return score;
+}
+
+function extractBusinessCardCompanyCandidates(rawText = "", rec = {}) {
+  const candidates = [];
+  const add = (value, source) => {
+    const v = cleanCardLine(value).replace(/([가-힣])\s+([가-힣])/g, "$1$2").trim();
+    if (!v || v.length > 40 || isBadBusinessCardCompanyName(v)) return;
+    candidates.push({ value: v, source, score: cardCandidateScore(v, rec) });
+  };
+
+  if (rec.회사명) add(rec.회사명, "current");
+  for (const line of cardRawLines(rawText)) {
+    const legal = line.match(/(?:㈜|\(주\)|주식회사)\s*[가-힣A-Za-z0-9&.\-\s]{1,24}|[가-힣A-Za-z0-9&.\-\s]{1,24}\s*(?:㈜|\(주\)|주식회사)/);
+    if (legal) add(legal[0], "legal-line");
+    if (/[가-힣]/.test(line) && CARD_COMPANY_SUFFIX_RE.test(line.replace(/\s+/g, ""))) add(line, "suffix-line");
+    if (!/(?:@|www\.|https?:\/\/|\.(?:co\.kr|or\.kr|go\.kr|com|net|org|io|ai|tech|kr|biz))/i.test(line)
+      && /^[A-Z0-9][A-Z0-9&.\- ]{1,14}$/i.test(line)
+      && !EN_NAME_LINE_RE.test(line)) add(line.toUpperCase(), "brand-line");
+  }
+
+  for (const base of getCardDomainBases(rec)) {
+    if (CARD_DOMAIN_COMPANY_HINTS[base]) add(CARD_DOMAIN_COMPANY_HINTS[base], "domain-hint");
+  }
+
+  const uniq = new Map();
+  for (const c of candidates) {
+    const key = c.value.replace(/\s+/g, "").toLowerCase();
+    if (!uniq.has(key) || c.score > uniq.get(key).score) uniq.set(key, c);
+  }
+  return [...uniq.values()].sort((a, b) => b.score - a.score);
+}
+
+function extractBusinessCardPersonCandidate(rawText = "") {
+  const lines = cardRawLines(rawText);
+  const titleWords = "대표이사|대표|CEO|전문위원|전문평가위원|위원장|이사|전무|상무|부장|차장|과장|대리|팀장|실장|소장|원장|세무사|회계사";
+  const titleOnlyRe = new RegExp(`^(?:${titleWords})$`, "i");
+  const usableName = name => /^[가-힣]{2,4}$/.test(name) && !titleOnlyRe.test(name) && !(typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(name));
+  for (const line of lines) {
+    let m = line.match(new RegExp(`(?:${titleWords})\\s*([가-힣]{2,4})`, "i"));
+    if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
+    m = line.match(new RegExp(`([가-힣]{2,4})\\s*(?:${titleWords})`, "i"));
+    if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const compact = lines[i].replace(/\s+/g, "");
+    if (!usableName(compact)) continue;
+    const near = [lines[i - 1], lines[i + 1]].filter(Boolean).join(" ");
+    if (new RegExp(titleWords, "i").test(near)) return { name: compact, title: (near.match(new RegExp(titleWords, "i")) || [""])[0] };
+  }
+  return null;
+}
+
 function normalizeBusinessCardImageRecord(rec, rawText = "") {
   if (!rec) return rec;
+  const issues = [];
+  const companyCandidates = extractBusinessCardCompanyCandidates(rawText, rec);
+  const bestCompany = companyCandidates[0];
+  if (bestCompany && (!rec.회사명 || isBadBusinessCardCompanyName(rec.회사명) || bestCompany.score > cardCandidateScore(rec.회사명, rec) + 20)) {
+    if (rec.회사명 && rec.회사명 !== bestCompany.value) issues.push(`회사명 보정: ${rec.회사명} → ${bestCompany.value}`);
+    rec._companyCandidateSource = bestCompany.source;
+    rec.회사명 = bestCompany.value;
+  }
+
+  for (const field of ["담당자", "대표자"]) {
+    if (isBadBusinessCardPersonName(rec[field])) {
+      issues.push(`${field} 오분류 제거: ${rec[field]}`);
+      rec[field] = "";
+    }
+  }
+
+  const personCandidate = extractBusinessCardPersonCandidate(rawText);
+  if (personCandidate) {
+    const isCeo = typeof isCeoTitle === "function" && isCeoTitle(personCandidate.title);
+    if (isCeo) {
+      if (!rec.대표자) rec.대표자 = personCandidate.name;
+      if (!rec.담당직함) rec.담당직함 = personCandidate.title;
+      if (rec.담당자 === personCandidate.name) rec.담당자 = "";
+    } else {
+      if (!rec.담당자) rec.담당자 = personCandidate.name;
+      if (!rec.담당직함 && (!rec.담당자 || rec.담당자 === personCandidate.name)) rec.담당직함 = personCandidate.title;
+    }
+    rec._personCandidateSource = "card-title-context";
+  }
+
   const companyAsPerson = extractCeoPersonTitle(rec.회사명);
   if (companyAsPerson) {
     if (!rec.대표자) rec.대표자 = companyAsPerson.name;
@@ -2580,6 +2757,10 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
       rec.대표자 = fallback.name;
       if (!rec.담당직함) rec.담당직함 = fallback.title;
     }
+  }
+  if (issues.length) {
+    rec._cardFieldIssues = issues.join(" | ");
+    rec._needsReview = true;
   }
   return rec;
 }
@@ -2638,7 +2819,7 @@ const CardSplitLearner = {
         base.영문명 = rec.회사명;
       }
 
-      for (const k of ["영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","주소","웹주소","업종","기업형태","매출","영업이익","flowScore","부스번호"]) {
+      for (const k of ["영문명","담당자","담당직함","전화","휴대폰","이메일","사업자번호","대표자","주소","웹주소","업종","아이템","기업형태","매출","영업이익","flowScore","부스번호"]) {
         if (!base[k] && rec[k]) base[k] = rec[k];
       }
       if (rec.대표자 && rec.대표자 !== base.담당자 && !base.대표자) base.대표자 = rec.대표자;
@@ -5702,7 +5883,7 @@ function buildSalesMapPayload(r, context = {}) {
   addFieldOnce(orgFieldList, "매출(억)", r.매출);
   addFieldOnce(orgFieldList, "설립일자", r.설립일);
   addFieldOnce(orgFieldList, "부스번호", r.부스번호);
-  addFieldOnce(orgFieldList, "아이템", r._expoIndustryText || r.업종원문 || "");
+  addFieldOnce(orgFieldList, "아이템", r.아이템 || r._expoIndustryText || r.업종원문 || "");
   addFieldOnce(orgFieldList, "FlowScore", r.flowScore);
   addFieldOnce(orgFieldList, "영업이익", r.영업이익);
   addFieldOnce(orgFieldList, "유입경로", r.source === "전시회" ? "전시회" : "오프/행사");
@@ -5746,7 +5927,7 @@ function buildSalesMapPayload(r, context = {}) {
       "Organization - 기업형태":     r.기업형태||"",
       "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
       "Organization - 유입경로_상세":detailSource,
-      "Organization - 아이템":       r._expoIndustryText||"",
+      "Organization - 아이템":       r.아이템||r._expoIndustryText||r.업종원문||"",
       "Organization - FlowScore":    r.flowScore||"",
       "Organization - 매출(억)":     r.매출||"",
       "Organization - 영업이익":     r.영업이익||"",
@@ -7687,6 +7868,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.45",
+    date: "2026-05-15 11:45",
+    title: "명함 추출 보정·전체 필드 표시",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "CardSplitLearner 전용 회사명 후보 랭킹 추가 — 슬로건/직함/설명문이 회사명으로 승격되는 문제 보정" },
+      { type: "fix", text: "Quality Marketing Quality 같은 영문 슬로건이 대표자·담당자명으로 들어가는 케이스 차단" },
+      { type: "fix", text: "AISH, INNOS 등 도메인/브랜드 기반 회사명 후보를 명함 파이프라인 안에서만 보강" },
+      { type: "improve", text: "웹 검수 테이블에 직함, 휴대폰, 일반전화, 주소, 업종, 아이템, 영문명을 모두 표시해 추출 데이터를 전체 검수 가능하게 변경" }
+    ],
+    learnLog: [
+      { text: "명함 파이프라인의 오류 검수 기준을 화면 표시와 저장 payload 기준으로 일치시킴" }
+    ]
+  },
   {
     version: "v9.44",
     date: "2026-05-15 09:30",
