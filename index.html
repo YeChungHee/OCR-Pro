@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.45 — 명함 추출 보정·전체 필드 표시</title>
+<title>OCR Pro v9.46 — 명함 복수소속·담당자 보정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.45</span>
+  <span class="ver">v9.46</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2569,15 +2569,24 @@ function cardCompanyScore(rec) {
 const CARD_DOMAIN_COMPANY_HINTS = {
   aish: "AISH",
   innos: "INNOS",
+  "innos-inc": "INNOS",
   shuny: "(주)슈니테크",
   zerocorp: "주식회사제로코퍼레이션",
   kibo: "기술보증기금"
+};
+
+const CARD_COMPANY_CANONICAL_HINTS = {
+  "MINNOS": "INNOS",
+  "M INNOS": "INNOS",
+  "SHUNY (주)": "(주)슈니테크",
+  "SHUNY(주)": "(주)슈니테크"
 };
 
 const CARD_COMPANY_SUFFIX_RE = /(?:㈜|\(주\)|주식회사|유한회사|합자회사|합명회사|재단법인|사단법인|회계사무소|세무회계사무소|보증기금|기술보증기금|코퍼레이션|테크|시스템|솔루션|기금)$/;
 const CARD_ROLE_OR_SLOGAN_RE = /(?:전문기업|전문위원|평가위원|전문평가위원|위원장|위원|최고의|품질|마케팅|비즈니스|커넥터|Connector|Quality|Marketing|Business|Smart\s+Work|Work\s+Hub|All\s+Business)/i;
 const CARD_EN_BUSINESS_WORD_RE = /(?:Quality|Marketing|Business|Smart|Work|Hub|Connector|Innovation|System|Solution|Technology|Network|Enterprise)/i;
 const CARD_FREE_MAIL_DOMAINS = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
+const CARD_FALSE_PERSON_LABEL_RE = /^(?:번호|변호|전화|팩스|메일|이메일|주소|웹주소|홈페이지|대표전화|일반전화|휴대폰|사업자|사업자번호)$/;
 
 function cleanCardLine(line) {
   return String(line || "")
@@ -2612,10 +2621,27 @@ function getCardDomainBases(rec = {}) {
   return [...new Set([getCardDomainBase(rec.웹주소), getCardDomainBase(rec.이메일)].filter(Boolean))];
 }
 
+function canonicalizeBusinessCardCompanyName(name, rec = {}) {
+  let s = String(name || "").replace(/\s+/g, " ").trim();
+  if (!s) return s;
+  const key = s.toUpperCase().replace(/\s+/g, " ");
+  if (CARD_COMPANY_CANONICAL_HINTS[key]) return CARD_COMPANY_CANONICAL_HINTS[key];
+  if (/^M?INNOS$/i.test(s)) return "INNOS";
+  if (/^shuny\s*\(주\)$/i.test(s)) return "(주)슈니테크";
+  for (const base of getCardDomainBases(rec)) {
+    const hint = CARD_DOMAIN_COMPANY_HINTS[base];
+    if (!hint) continue;
+    const compactName = s.replace(/[^a-z0-9가-힣]/gi, "").toLowerCase();
+    if (compactName === base || compactName === `${base}주` || compactName.includes(base)) return hint;
+  }
+  return s;
+}
+
 function isBadBusinessCardCompanyName(name) {
   const s = String(name || "").replace(/\s+/g, " ").trim();
   if (!s) return true;
   if (extractCeoPersonTitle(s)) return true;
+  if (/^[A-Za-z0-9.-]+\s*\(주\)$/i.test(s)) return true;
   if (/^[가-힣]{2,4}$/.test(s) && !CARD_COMPANY_SUFFIX_RE.test(s)) return true;
   if (CARD_ROLE_OR_SLOGAN_RE.test(s) && !CARD_COMPANY_SUFFIX_RE.test(s) && !isOfficialCompanyNameForCard(s)) return true;
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$/.test(s) && CARD_EN_BUSINESS_WORD_RE.test(s)) return true;
@@ -2626,6 +2652,7 @@ function isBadBusinessCardCompanyName(name) {
 function isBadBusinessCardPersonName(name) {
   const s = String(name || "").replace(/\s+/g, " ").trim();
   if (!s) return false;
+  if (CARD_FALSE_PERSON_LABEL_RE.test(s)) return true;
   if (CARD_ROLE_OR_SLOGAN_RE.test(s)) return true;
   if (CARD_COMPANY_SUFFIX_RE.test(s) || isOfficialCompanyNameForCard(s)) return true;
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$/.test(s) && CARD_EN_BUSINESS_WORD_RE.test(s)) return true;
@@ -2653,7 +2680,10 @@ function cardCandidateScore(name, rec = {}) {
 function extractBusinessCardCompanyCandidates(rawText = "", rec = {}) {
   const candidates = [];
   const add = (value, source) => {
-    const v = cleanCardLine(value).replace(/([가-힣])\s+([가-힣])/g, "$1$2").trim();
+    const v = canonicalizeBusinessCardCompanyName(
+      cleanCardLine(value).replace(/([가-힣])\s+([가-힣])/g, "$1$2").trim(),
+      rec
+    );
     if (!v || v.length > 40 || isBadBusinessCardCompanyName(v)) return;
     candidates.push({ value: v, source, score: cardCandidateScore(v, rec) });
   };
@@ -2703,6 +2733,7 @@ function extractBusinessCardPersonCandidate(rawText = "") {
 function normalizeBusinessCardImageRecord(rec, rawText = "") {
   if (!rec) return rec;
   const issues = [];
+  if (rec.회사명) rec.회사명 = canonicalizeBusinessCardCompanyName(rec.회사명, rec);
   const companyCandidates = extractBusinessCardCompanyCandidates(rawText, rec);
   const bestCompany = companyCandidates[0];
   if (bestCompany && (!rec.회사명 || isBadBusinessCardCompanyName(rec.회사명) || bestCompany.score > cardCandidateScore(rec.회사명, rec) + 20)) {
@@ -2716,6 +2747,11 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
       issues.push(`${field} 오분류 제거: ${rec[field]}`);
       rec[field] = "";
     }
+  }
+
+  if (typeof isCeoTitle === "function" && isCeoTitle(rec.담당직함) && !rec.대표자 && !extractCeoPersonTitle(rawText.replace(/\n/g, " "))) {
+    issues.push(`대표 직함 오분류 제거: ${rec.담당직함}`);
+    rec.담당직함 = "";
   }
 
   const personCandidate = extractBusinessCardPersonCandidate(rawText);
@@ -2846,6 +2882,67 @@ function normalizeBusinessCardImageRecords(recs, rawText = "") {
   return CardSplitLearner.normalizeRecords(recs, rawText);
 }
 
+function businessCardContactKeys(rec = {}) {
+  const keys = [];
+  const email = String(rec.이메일 || "").trim().toLowerCase();
+  const mobile = String(rec.휴대폰 || "").replace(/\D/g, "");
+  const phone = String(rec.전화 || "").replace(/\D/g, "");
+  if (email && /@/.test(email)) keys.push(`e:${email}`);
+  if (mobile.length >= 9) keys.push(`m:${mobile}`);
+  if (phone.length >= 8) keys.push(`p:${phone}`);
+  return keys;
+}
+
+function businessCardPersonNameQuality(name) {
+  const s = String(name || "").replace(/\s+/g, "").trim();
+  if (!/^[가-힣]{2,4}$/.test(s) || isBadBusinessCardPersonName(s)) return 0;
+  let score = s.length;
+  if (s.length >= 3) score += 4;
+  if (typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(s)) score -= 10;
+  return score;
+}
+
+function bestBusinessCardPersonName(rec = {}) {
+  const candidates = [rec.담당자, rec.대표자].filter(Boolean);
+  return candidates.sort((a, b) => businessCardPersonNameQuality(b) - businessCardPersonNameQuality(a))[0] || "";
+}
+
+function applySharedBusinessCardPersonName(rec, name) {
+  if (!name || businessCardPersonNameQuality(name) <= 0) return false;
+  const current = bestBusinessCardPersonName(rec);
+  if (businessCardPersonNameQuality(current) >= businessCardPersonNameQuality(name)) return false;
+  const title = String(rec.담당직함 || "").trim();
+  if (typeof isCeoTitle === "function" && isCeoTitle(title)) {
+    rec.대표자 = name;
+    rec.담당자 = "";
+  } else {
+    rec.담당자 = name;
+  }
+  rec._sharedContactNameCorrected = true;
+  rec._needsReview = true;
+  return true;
+}
+
+function harmonizeSharedBusinessCardContact(rec, pool = []) {
+  if (!rec || rec.source !== "이미지") return rec;
+  const keys = businessCardContactKeys(rec);
+  if (!keys.length) return rec;
+  const keySet = new Set(keys);
+  const peers = pool.filter(p =>
+    p && p !== rec && p.source === "이미지" &&
+    businessCardContactKeys(p).some(k => keySet.has(k))
+  );
+  if (!peers.length) return rec;
+  const bestName = [rec, ...peers]
+    .map(bestBusinessCardPersonName)
+    .filter(Boolean)
+    .sort((a, b) => businessCardPersonNameQuality(b) - businessCardPersonNameQuality(a))[0] || "";
+  if (!bestName) return rec;
+  applySharedBusinessCardPersonName(rec, bestName);
+  for (const peer of peers) applySharedBusinessCardPersonName(peer, bestName);
+  return rec;
+}
+
 const PipelineLearningRegistry = {
   engines: {
     image: CardSplitLearner,
@@ -2896,6 +2993,7 @@ function pushRecord(rec) {
   // 신뢰도 자동 계산 (빈 경우)
   if (!rec.신뢰도)  rec.신뢰도  = calcReliability(rec);
   records.push(rec);
+  harmonizeSharedBusinessCardContact(rec, records);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -4008,7 +4106,9 @@ function parseFullTextToRecords(fullText){
         const emptyRec2    = !r2.회사명&&dom2==="";
         /* ★ 교차 매칭: r의 이메일도메인 = r2의 웹도메인 (JUVENUI↔쥬베뉴 패턴) */
         const crossMatch   = (dom&&wdom2&&dom===wdom2)||(dom2&&wdom&&dom2===wdom);
-        if(sameEmailDom||sameWebDom||samePhone||crossMatch||emptyRec2){
+        const differentCompanyWithSharedPerson =
+          samePhone && r.회사명 && r2.회사명 && r.회사명!==r2.회사명 && !sameWebDom && !crossMatch;
+        if((sameEmailDom||sameWebDom||samePhone||crossMatch||emptyRec2) && !differentCompanyWithSharedPerson){
           /* r2의 비어있지 않은 필드를 r에 보충 */
           for(const k of Object.keys(r)){
             if(!r[k]&&r2[k]) r[k]=r2[k];
@@ -7868,6 +7968,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.46",
+    date: "2026-05-15 13:20",
+    title: "명함 복수소속·담당자 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "동일 휴대폰 담당자가 여러 회사/소속에 걸쳐 나타나는 경우를 교차오염으로 보지 않고 별도 회사 레코드로 유지" },
+      { type: "fix", text: "같은 휴대폰·이메일을 공유하는 명함 행 사이에서 더 완전한 담당자명을 기준으로 짧게 잘린 이름을 보강" },
+      { type: "fix", text: "shuny (주) → (주)슈니테크, MINNOS → INNOS 등 명함 브랜드 OCR 오인식을 도메인·브랜드 힌트로 정규화" },
+      { type: "fix", text: "번호/변호/대표 같은 라벨성 단어가 대표자명·직함으로 승격되는 케이스를 제거하고 실제 이름+직함 후보를 재탐색" }
+    ],
+    learnLog: [
+      { text: "명함 파이프라인 학습 기준을 연락처 삭제가 아닌 복수소속 허용과 담당자 정합성 보강으로 조정" }
+    ]
+  },
   {
     version: "v9.45",
     date: "2026-05-15 11:45",
