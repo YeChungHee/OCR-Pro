@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.46 — 명함 복수소속·담당자 보정</title>
+<title>OCR Pro v9.47 — 대표번호 오분류 보정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.46</span>
+  <span class="ver">v9.47</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2541,9 +2541,9 @@ function extractCeoPersonTitle(text) {
   if (!s) return null;
   const titleWords = "대표이사|대표|사장|회장|총장|원장|소장|이사장|공동대표|각자대표|CEO|CTO|CFO|COO|CMO|CSO|대표세무사|대표변호사|대표회계사|대표원장";
   let m = s.match(new RegExp(`^([가-힣]{2,4})\\s*(${titleWords})$`, "i"));
-  if (m) return { name: m[1], title: m[2] };
+  if (m && !isBadBusinessCardPersonName(m[1])) return { name: m[1], title: m[2] };
   m = s.match(new RegExp(`^(${titleWords})\\s*([가-힣]{2,4})$`, "i"));
-  if (m) return { name: m[2], title: m[1] };
+  if (m && !isBadBusinessCardPersonName(m[2])) return { name: m[2], title: m[1] };
   return null;
 }
 
@@ -2586,7 +2586,7 @@ const CARD_COMPANY_SUFFIX_RE = /(?:㈜|\(주\)|주식회사|유한회사|합자�
 const CARD_ROLE_OR_SLOGAN_RE = /(?:전문기업|전문위원|평가위원|전문평가위원|위원장|위원|최고의|품질|마케팅|비즈니스|커넥터|Connector|Quality|Marketing|Business|Smart\s+Work|Work\s+Hub|All\s+Business)/i;
 const CARD_EN_BUSINESS_WORD_RE = /(?:Quality|Marketing|Business|Smart|Work|Hub|Connector|Innovation|System|Solution|Technology|Network|Enterprise)/i;
 const CARD_FREE_MAIL_DOMAINS = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
-const CARD_FALSE_PERSON_LABEL_RE = /^(?:번호|변호|전화|팩스|메일|이메일|주소|웹주소|홈페이지|대표전화|일반전화|휴대폰|사업자|사업자번호)$/;
+const CARD_FALSE_PERSON_LABEL_RE = /^(?:번호|변호|전화|팩스|메일|이메일|주소|웹주소|홈페이지|대표전화|일반전화|휴대폰|사업자|사업자번호|대표번호)$/;
 
 function cleanCardLine(line) {
   return String(line || "")
@@ -2714,12 +2714,18 @@ function extractBusinessCardPersonCandidate(rawText = "") {
   const lines = cardRawLines(rawText);
   const titleWords = "대표이사|대표|CEO|전문위원|전문평가위원|위원장|이사|전무|상무|부장|차장|과장|대리|팀장|실장|소장|원장|세무사|회계사";
   const titleOnlyRe = new RegExp(`^(?:${titleWords})$`, "i");
-  const usableName = name => /^[가-힣]{2,4}$/.test(name) && !titleOnlyRe.test(name) && !(typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(name));
+  const usableName = name => /^[가-힣]{2,4}$/.test(name) && !titleOnlyRe.test(name) && !isBadBusinessCardPersonName(name) && !(typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(name));
   for (const line of lines) {
+    const compactLine = line.replace(/\s+/g, "");
+    if (/(?:세무회계사무소|회계사무소|보증기금)$/.test(compactLine)) continue;
     let m = line.match(new RegExp(`(?:${titleWords})\\s*([가-힣]{2,4})`, "i"));
     if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
     m = line.match(new RegExp(`([가-힣]{2,4})\\s*(?:${titleWords})`, "i"));
     if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
+    m = compactLine.match(new RegExp(`(?:${titleWords})([가-힣]{2,4})`, "i"));
+    if (m && usableName(m[1])) return { name: m[1], title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
+    m = compactLine.match(new RegExp(`([가-힣]{2,4})(?:${titleWords})`, "i"));
+    if (m && usableName(m[1])) return { name: m[1], title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
   }
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i].replace(/\s+/g, "");
@@ -7968,6 +7974,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.47",
+    date: "2026-05-15 15:40",
+    title: "대표번호 오분류 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "대표번호 OCR 파편이 대표자명=변호/번호, 직함=대표로 승격되는 문제를 후보 추출 단계에서 차단" },
+      { type: "fix", text: "세무사 전생수처럼 직함과 이름 사이 공백이 불안정한 명함도 담당자명을 재탐색하도록 compact-line 후보 추출 추가" }
+    ],
+    learnLog: [
+      { text: "명함 파이프라인의 이름 후보 검증을 후처리뿐 아니라 대표자/담당자 후보 생성 함수 내부에도 적용" }
+    ]
+  },
   {
     version: "v9.46",
     date: "2026-05-15 13:20",
