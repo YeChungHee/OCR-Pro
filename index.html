@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.48 — SalesMap 소속 연결 보정</title>
+<title>OCR Pro v9.49 — 명함 대표자·직함 라우팅 보정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.48</span>
+  <span class="ver">v9.49</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2586,7 +2586,8 @@ const CARD_COMPANY_SUFFIX_RE = /(?:㈜|\(주\)|주식회사|유한회사|합자�
 const CARD_ROLE_OR_SLOGAN_RE = /(?:전문기업|전문위원|평가위원|전문평가위원|위원장|위원|최고의|품질|마케팅|비즈니스|커넥터|Connector|Quality|Marketing|Business|Smart\s+Work|Work\s+Hub|All\s+Business)/i;
 const CARD_EN_BUSINESS_WORD_RE = /(?:Quality|Marketing|Business|Smart|Work|Hub|Connector|Innovation|System|Solution|Technology|Network|Enterprise)/i;
 const CARD_FREE_MAIL_DOMAINS = new Set(["gmail","naver","daum","hanmail","kakao","yahoo","hotmail","outlook","nate","icloud","live"]);
-const CARD_FALSE_PERSON_LABEL_RE = /^(?:번호|변호|전화|팩스|메일|이메일|주소|웹주소|홈페이지|대표전화|일반전화|휴대폰|사업자|사업자번호|대표번호)$/;
+const CARD_FALSE_PERSON_LABEL_RE = /^(?:번호|변호|전화|팩스|메일|이메일|주소|웹주소|홈페이지|대표전화|일반전화|휴대폰|사업자|사업자번호|대표번호|공인)$/;
+const BUSINESS_CARD_TITLE_ONLY_RE = /^(?:대표이사|대표|대표자|사장|회장|총장|원장|소장|이사장|공동대표|각자대표|CEO|CTO|CFO|COO|CMO|CSO|부사장|전무이사|전무|상무이사|상무|이사|부장|차장|과장|대리|사원|팀장|실장|본부장|센터장|수석|선임|책임|주임|전문위원|전문평가위원|평가위원|위원장|위원|세무사|회계사|변호사)$/i;
 
 function cleanCardLine(line) {
   return String(line || "")
@@ -2653,6 +2654,7 @@ function isBadBusinessCardPersonName(name) {
   const s = String(name || "").replace(/\s+/g, " ").trim();
   if (!s) return false;
   if (CARD_FALSE_PERSON_LABEL_RE.test(s)) return true;
+  if (BUSINESS_CARD_TITLE_ONLY_RE.test(s)) return true;
   if (CARD_ROLE_OR_SLOGAN_RE.test(s)) return true;
   if (CARD_COMPANY_SUFFIX_RE.test(s) || isOfficialCompanyNameForCard(s)) return true;
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$/.test(s) && CARD_EN_BUSINESS_WORD_RE.test(s)) return true;
@@ -2736,10 +2738,36 @@ function extractBusinessCardPersonCandidate(rawText = "") {
   return null;
 }
 
+function normalizeBusinessCardRoleOnlyPerson(rec, issues = []) {
+  const person = String(rec?.담당자 || "").trim();
+  if (!person || !BUSINESS_CARD_TITLE_ONLY_RE.test(person)) return false;
+  issues.push(`담당자 직함오분류 제거: ${person}`);
+  if (!rec.담당직함) rec.담당직함 = person;
+  rec.담당자 = "";
+  return true;
+}
+
+function promoteBusinessCardExecutivePerson(rec, rawText = "", issues = []) {
+  if (!rec || rec.대표자) return false;
+  const name = String(rec.담당자 || "").replace(/\s+/g, "").trim();
+  if (!/^[가-힣]{2,4}$/.test(name) || isBadBusinessCardPersonName(name)) return false;
+  const text = String(rawText || "");
+  const hasExecutiveHint = /대표\s*이사|대표자|대표\b|CEO|Chief\s*Executive/i.test(text) || isCeoTitle(rec.담당직함);
+  if (!hasExecutiveHint) return false;
+  const candidate = extractBusinessCardPersonCandidate(text);
+  if (candidate && candidate.name !== name && isCeoTitle(candidate.title)) return false;
+  rec.대표자 = name;
+  rec.담당자 = "";
+  if (!rec.담당직함) rec.담당직함 = (candidate && candidate.title) || "대표이사";
+  issues.push(`대표자 승격: ${name}`);
+  return true;
+}
+
 function normalizeBusinessCardImageRecord(rec, rawText = "") {
   if (!rec) return rec;
   const issues = [];
   if (rec.회사명) rec.회사명 = canonicalizeBusinessCardCompanyName(rec.회사명, rec);
+  normalizeBusinessCardRoleOnlyPerson(rec, issues);
   const companyCandidates = extractBusinessCardCompanyCandidates(rawText, rec);
   const bestCompany = companyCandidates[0];
   if (bestCompany && (!rec.회사명 || isBadBusinessCardCompanyName(rec.회사명) || bestCompany.score > cardCandidateScore(rec.회사명, rec) + 20)) {
@@ -2792,6 +2820,8 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
     if (rec.담당자 && !rec.대표자) rec.대표자 = rec.담당자;
     rec.담당자 = "";
   }
+
+  promoteBusinessCardExecutivePerson(rec, rawText, issues);
 
   if (!rec.대표자 && rawText) {
     const fallback = extractCeoPersonTitle(rawText.replace(/\n/g, " "));
@@ -8092,6 +8122,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.49",
+    date: "2026-05-16 22:05",
+    title: "명함 대표자·직함 라우팅 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "세무사·회계사·대표이사 등 직함 단독 토큰이 담당직원 이름으로 표시되는 문제를 명함 전용 필터에서 차단" },
+      { type: "fix", text: "대표이사/CEO 힌트가 있는 명함에서 담당자명이 대표자명으로 승격되지 않던 케이스 보정" },
+      { type: "improve", text: "KICPA 세무회계사무소·슈니테크처럼 직함과 이름이 분리 배치된 명함을 원문 주변 문맥으로 재분류" }
+    ],
+    learnLog: [
+      { text: "명함 파이프라인에서 사람 이름 후보와 직함 후보를 분리하고, CEO/대표이사 문맥은 Organization 대표자명으로 우선 라우팅" }
+    ]
+  },
   {
     version: "v9.48",
     date: "2026-05-15 16:05",
