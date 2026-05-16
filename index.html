@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.49 — 명함 대표자·직함 라우팅 보정</title>
+<title>OCR Pro v9.50 — 명함 세로이름 복구 보정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.49</span>
+  <span class="ver">v9.50</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2598,10 +2598,28 @@ function cleanCardLine(line) {
 }
 
 function cardRawLines(rawText = "") {
-  return String(rawText || "")
+  const lines = String(rawText || "")
     .split(/\n+/)
     .map(cleanCardLine)
     .filter(Boolean);
+  const merged = [];
+  let singleKoBuf = "";
+  const flushSingleKo = () => {
+    if (singleKoBuf.length >= 2 && singleKoBuf.length <= 4) merged.push(singleKoBuf);
+    else if (singleKoBuf) merged.push(...singleKoBuf.split(""));
+    singleKoBuf = "";
+  };
+  for (const line of lines) {
+    if (/^[가-힣]$/.test(line)) {
+      singleKoBuf += line;
+      if (singleKoBuf.length === 4) flushSingleKo();
+      continue;
+    }
+    flushSingleKo();
+    merged.push(line);
+  }
+  flushSingleKo();
+  return merged;
 }
 
 function getCardDomainBase(value) {
@@ -8122,6 +8140,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.50",
+    date: "2026-05-17 00:20",
+    title: "명함 세로이름 복구 보정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "전/생/수처럼 OCR이 이름을 한 글자씩 줄 분리한 경우 명함 전용 후보 단계에서 전생수로 병합" },
+      { type: "fix", text: "세무사·회계사 직함 주변의 세로 배치 이름을 담당직원으로 재탐색해 KICPA 명함 담당자 누락 보정" },
+      { type: "improve", text: "세로이름 병합을 명함 이미지 파이프라인 정규화 함수에만 적용해 QR·문서·URL·전시회 입력에는 영향이 없도록 유지" }
+    ],
+    learnLog: [
+      { text: "명함 파이프라인에서 이름은 한 줄 공백뿐 아니라 단일 한글 줄 연속 패턴도 사람 후보로 복구해야 함" }
+    ]
+  },
   {
     version: "v9.49",
     date: "2026-05-16 22:05",
