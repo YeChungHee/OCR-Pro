@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.50 — 명함 세로이름 복구 보정</title>
+<title>OCR Pro v9.51 — 대표자 담당자 동시 기록</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.50</span>
+  <span class="ver">v9.51</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2332,13 +2332,15 @@ function render(){
     const mobileP = _mobileNum
       ? esc(_mobileNum)
       : (_landlineNum ? `<span style="color:var(--mut);font-size:11px" title="일반전화 (세일즈맵 Organization-전화로 출력)">☎ ${esc(_landlineNum)}</span>` : "");
-    /* ★ v9.28: 테이블 표시를 exportExcel 로직과 통일 (isCeoTitle 기준 라우팅)
-       CEO 직함 → 대표자명 컬럼에 이름, 담당직원 컬럼 비움
-       비CEO 직함 → 담당직원 컬럼에 이름, 대표자명 컬럼은 r.대표자 */
+    /* ★ v9.51: 대표 직함은 Organization 대표자명과 People 담당자명에 동시 표시 */
     const _직함 = (r.담당직함||"").trim();
     const _isCeo = typeof isCeoTitle==="function" && isCeoTitle(_직함);
-    const _ceoName    = _isCeo ? esc(r.담당자||r.대표자||"") : esc(r.대표자||"");
-    const _contactName= (!_isCeo && r.담당자 && r.담당자 !== r.대표자) ? esc(r.담당자) : "";
+    const _personName = (r.담당자||"").trim();
+    const _repName    = (r.대표자||"").trim();
+    const _ceoName    = _isCeo ? esc(_personName||_repName) : esc(_repName);
+    const _contactName= _isCeo
+      ? esc(_personName||_repName)
+      : ((_personName && _personName !== _repName) ? esc(_personName) : "");
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
@@ -2775,9 +2777,9 @@ function promoteBusinessCardExecutivePerson(rec, rawText = "", issues = []) {
   const candidate = extractBusinessCardPersonCandidate(text);
   if (candidate && candidate.name !== name && isCeoTitle(candidate.title)) return false;
   rec.대표자 = name;
-  rec.담당자 = "";
+  rec.담당자 = name;
   if (!rec.담당직함) rec.담당직함 = (candidate && candidate.title) || "대표이사";
-  issues.push(`대표자 승격: ${name}`);
+  issues.push(`대표자·담당자 동시 기록: ${name}`);
   return true;
 }
 
@@ -2811,8 +2813,8 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
     const isCeo = typeof isCeoTitle === "function" && isCeoTitle(personCandidate.title);
     if (isCeo) {
       if (!rec.대표자) rec.대표자 = personCandidate.name;
+      if (!rec.담당자) rec.담당자 = personCandidate.name;
       if (!rec.담당직함) rec.담당직함 = personCandidate.title;
-      if (rec.담당자 === personCandidate.name) rec.담당자 = "";
     } else {
       if (!rec.담당자) rec.담당자 = personCandidate.name;
       if (!rec.담당직함 && (!rec.담당자 || rec.담당자 === personCandidate.name)) rec.담당직함 = personCandidate.title;
@@ -2831,12 +2833,12 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
   if (contactAsPerson) {
     rec.대표자 = rec.대표자 || contactAsPerson.name;
     rec.담당직함 = rec.담당직함 || contactAsPerson.title;
-    rec.담당자 = "";
+    rec.담당자 = rec.담당자 || contactAsPerson.name;
   }
 
   if (typeof isCeoTitle === "function" && isCeoTitle(rec.담당직함)) {
     if (rec.담당자 && !rec.대표자) rec.대표자 = rec.담당자;
-    rec.담당자 = "";
+    if (!rec.담당자 && rec.대표자) rec.담당자 = rec.대표자;
   }
 
   promoteBusinessCardExecutivePerson(rec, rawText, issues);
@@ -2845,6 +2847,7 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
     const fallback = extractCeoPersonTitle(rawText.replace(/\n/g, " "));
     if (fallback) {
       rec.대표자 = fallback.name;
+      if (!rec.담당자) rec.담당자 = fallback.name;
       if (!rec.담당직함) rec.담당직함 = fallback.title;
     }
   }
@@ -2968,7 +2971,7 @@ function applySharedBusinessCardPersonName(rec, name) {
   const title = String(rec.담당직함 || "").trim();
   if (typeof isCeoTitle === "function" && isCeoTitle(title)) {
     rec.대표자 = name;
-    rec.담당자 = "";
+    rec.담당자 = name;
   } else {
     rec.담당자 = name;
   }
@@ -4215,7 +4218,7 @@ function parseFullTextToRecords(fullText){
     }
   }
 
-  /* ★ Fix6 v9.26: 경영자 직함 보유자 → 담당자 → 대표자 이동
+  /* ★ Fix6/v9.51: 경영자 직함 보유자 → 대표자 기록 + 담당자명 보존
      isCeoTitle() 기준으로 확장: 대표이사·대표·사장·회장·원장·CEO·CTO 등 모두 처리
      예) 이경숙\n대표이사, 진영매\n대표, 한상천\nCEO 등 */
   for(const rec of records){
@@ -4224,7 +4227,9 @@ function parseFullTextToRecords(fullText){
         : /^(대표이사|대표|사장|회장|총장|원장|소장|이사장|CEO|CTO|CFO|COO|CMO|CSO|공동대표|각자대표)$/i.test((rec.담당직함||"").trim())){
       if(rec.담당자 && !rec.대표자){
         rec.대표자=rec.담당자;
-        rec.담당자="";
+      }
+      if(!rec.담당자 && rec.대표자){
+        rec.담당자=rec.대표자;
       }
     }
   }
@@ -5276,8 +5281,9 @@ async function confirmImages(){
             r.휴대폰=parsed.휴대폰||"";
             r.이메일=parsed.이메일||"";
             r.사업자번호=parsed.사업자번호||"";
-            if(/^대표(이사)?$/.test(parsed.담당직함||"")){
+            if(typeof isCeoTitle==="function" ? isCeoTitle(parsed.담당직함||"") : /^대표(이사)?$/.test(parsed.담당직함||"")){
               r.대표자=parsed.담당자||parsed.대표자||"";
+              if(!r.담당자) r.담당자=r.대표자;
             }else{
               r.대표자=parsed.대표자||"";
             }
@@ -5334,10 +5340,10 @@ async function confirmImages(){
                 _r.휴대폰=_parsed.휴대폰||"";
                 _r.이메일=_parsed.이메일||"";
                 _r.사업자번호=_parsed.사업자번호||"";
-                /* ★ Fix6 v9.25: 담당직함이 대표이사/대표이면 담당자 → 대표자로 이동 */
-                if(/^대표(이사)?$/.test((_parsed.담당직함||"").trim())){
+                /* ★ v9.51: 대표 직함이면 대표자명과 담당자명에 동시 기록 */
+                if(typeof isCeoTitle==="function" ? isCeoTitle((_parsed.담당직함||"").trim()) : /^대표(이사)?$/.test((_parsed.담당직함||"").trim())){
                   _r.대표자=_parsed.담당자||_parsed.대표자||"";
-                  _r.담당자="";
+                  if(!_r.담당자) _r.담당자=_r.대표자;
                 }else{
                   _r.대표자=_parsed.대표자||"";
                 }
@@ -5411,8 +5417,9 @@ async function confirmImages(){
             }
             r.이메일=parsed.이메일||"";
             r.사업자번호=parsed.사업자번호||"";
-            if(/^대표(이사)?$/.test(parsed.담당직함||"")){
+            if(typeof isCeoTitle==="function" ? isCeoTitle(parsed.담당직함||"") : /^대표(이사)?$/.test(parsed.담당직함||"")){
               r.대표자=parsed.담당자||parsed.대표자||"";
+              if(!r.담당자) r.담당자=r.대표자;
             }else{
               r.대표자=parsed.대표자||"";
             }
@@ -5483,8 +5490,9 @@ async function confirmImages(){
               r.휴대폰=parsed.휴대폰||"";
               r.이메일=parsed.이메일||"";
               r.사업자번호=parsed.사업자번호||"";
-              if(/^대표(이사)?$/.test(parsed.담당직함||"")){
+              if(typeof isCeoTitle==="function" ? isCeoTitle(parsed.담당직함||"") : /^대표(이사)?$/.test(parsed.담당직함||"")){
                 r.대표자=parsed.담당자||parsed.대표자||"";
+                if(!r.담당자) r.담당자=r.대표자;
               }else{
                 r.대표자=parsed.대표자||"";
               }
@@ -6016,7 +6024,9 @@ function buildSalesMapPayload(r, context = {}) {
   const 이름원본  = (r.담당자 || "").trim();
   const isCeo     = isCeoTitle(직함원본);
   const 대표자명  = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
-  const 담당직원  = (!isCeo && 이름원본 && 이름원본 !== (r.대표자 || "").trim()) ? 이름원본 : "";
+  const 담당직원  = isCeo
+    ? (이름원본 || 대표자명)
+    : ((이름원본 && 이름원본 !== (r.대표자 || "").trim()) ? 이름원본 : "");
   const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
   const mobileTel = allPhones.find(p => isMobile(p)) || "";
   const landlineTel = allPhones.find(p => !isMobile(p)) || "";
@@ -8140,6 +8150,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.51",
+    date: "2026-05-17 00:45",
+    title: "대표자 담당자 동시 기록",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "대표/대표이사/CEO 직함을 가진 인물은 Organization 대표자명과 People 담당자명에 동시에 기록" },
+      { type: "fix", text: "명함 이미지 정규화 단계에서 대표자 승격 시 담당자명을 비우던 후처리 제거" },
+      { type: "fix", text: "SalesMap payload와 엑셀 출력에서 대표자명, 담당직원, People 이름이 같은 대표 인물을 공유하도록 정렬" }
+    ],
+    learnLog: [
+      { text: "대표 직함 인물은 회사 대표자이면서 이메일 마케팅 대상 People 레코드이므로 삭제가 아니라 중복 보존이 정답" }
+    ]
+  },
   {
     version: "v9.50",
     date: "2026-05-17 00:20",
