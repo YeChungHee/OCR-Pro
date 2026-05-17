@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.52 — 세로이름 첫글자 복구</title>
+<title>OCR Pro v9.53 — 세로이름 직함줄 병합</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.52</span>
+  <span class="ver">v9.53</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2746,17 +2746,27 @@ function extractBusinessCardPersonCandidate(rawText = "") {
     }
     return "";
   };
-  for (const line of lines) {
+  const mergeAdjacentVerticalName = (i, name) => {
+    const compactName = String(name || "").replace(/\s+/g, "");
+    const prevCompact = String(lines[i - 1] || "").replace(/\s+/g, "");
+    const nextCompact = String(lines[i + 1] || "").replace(/\s+/g, "");
+    const mergedNames = [];
+    if (/^[가-힣]$/.test(prevCompact) && /^[가-힣]{2,3}$/.test(compactName)) mergedNames.push(prevCompact + compactName);
+    if (/^[가-힣]{2,3}$/.test(compactName) && /^[가-힣]$/.test(nextCompact)) mergedNames.push(compactName + nextCompact);
+    return mergedNames.find(usableName) || compactName;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const compactLine = line.replace(/\s+/g, "");
     if (/(?:세무회계사무소|회계사무소|보증기금)$/.test(compactLine)) continue;
     let m = line.match(new RegExp(`(?:${titleWords})\\s*([가-힣]{2,4})`, "i"));
-    if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
+    if (m && usableName(mergeAdjacentVerticalName(i, m[1]))) return { name: mergeAdjacentVerticalName(i, m[1]), title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
     m = line.match(new RegExp(`([가-힣]{2,4})\\s*(?:${titleWords})`, "i"));
-    if (m && usableName(m[1])) return { name: m[1], title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
+    if (m && usableName(mergeAdjacentVerticalName(i, m[1]))) return { name: mergeAdjacentVerticalName(i, m[1]), title: (line.match(new RegExp(titleWords, "i")) || [""])[0] };
     m = compactLine.match(new RegExp(`(?:${titleWords})([가-힣]{2,4})`, "i"));
-    if (m && usableName(m[1])) return { name: m[1], title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
+    if (m && usableName(mergeAdjacentVerticalName(i, m[1]))) return { name: mergeAdjacentVerticalName(i, m[1]), title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
     m = compactLine.match(new RegExp(`([가-힣]{2,4})(?:${titleWords})`, "i"));
-    if (m && usableName(m[1])) return { name: m[1], title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
+    if (m && usableName(mergeAdjacentVerticalName(i, m[1]))) return { name: mergeAdjacentVerticalName(i, m[1]), title: (compactLine.match(new RegExp(titleWords, "i")) || [""])[0] };
   }
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i].replace(/\s+/g, "");
@@ -2764,9 +2774,7 @@ function extractBusinessCardPersonCandidate(rawText = "") {
     const nextCompact = String(lines[i + 1] || "").replace(/\s+/g, "");
     const title = nearbyTitle(i);
     if (!title) continue;
-    const mergedNames = [];
-    if (/^[가-힣]$/.test(prevCompact) && /^[가-힣]{2,3}$/.test(compact)) mergedNames.push(prevCompact + compact);
-    if (/^[가-힣]{2,3}$/.test(compact) && /^[가-힣]$/.test(nextCompact)) mergedNames.push(compact + nextCompact);
+    const mergedNames = [mergeAdjacentVerticalName(i, compact)];
     for (const mergedName of mergedNames) {
       if (usableName(mergedName)) return { name: mergedName, title };
     }
@@ -8168,6 +8176,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.53",
+    date: "2026-05-17 12:55",
+    title: "세로이름 직함줄 병합",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "OCR이 전/생수 세무사처럼 이름 일부와 직함을 같은 줄에 붙여도 전생수로 우선 병합" },
+      { type: "fix", text: "직함 포함 라인에서 2글자 이름을 확정하기 전에 앞뒤 단일 한글 줄을 결합해 평가" }
+    ],
+    learnLog: [
+      { text: "세로 명함 OCR은 1글자 줄과 2글자+직함 줄 조합도 발생하므로 직함라인 파싱 전 병합이 필요" }
+    ]
+  },
   {
     version: "v9.52",
     date: "2026-05-17 12:45",
