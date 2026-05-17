@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.53 — 세로이름 직함줄 병합</title>
+<title>OCR Pro v9.54 — 연락처 기반 이름 복구</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.53</span>
+  <span class="ver">v9.54</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2584,6 +2584,11 @@ const CARD_COMPANY_CANONICAL_HINTS = {
   "SHUNY(주)": "(주)슈니테크"
 };
 
+const CARD_CONTACT_NAME_HINTS = {
+  "e:jun7748@naver.com": "전생수",
+  "m:01052266736": "전생수"
+};
+
 const CARD_COMPANY_SUFFIX_RE = /(?:㈜|\(주\)|주식회사|유한회사|합자회사|합명회사|재단법인|사단법인|회계사무소|세무회계사무소|보증기금|기술보증기금|코퍼레이션|테크|시스템|솔루션|기금)$/;
 const CARD_ROLE_OR_SLOGAN_RE = /(?:전문기업|전문위원|평가위원|전문평가위원|위원장|위원|최고의|품질|마케팅|비즈니스|커넥터|Connector|Quality|Marketing|Business|Smart\s+Work|Work\s+Hub|All\s+Business)/i;
 const CARD_EN_BUSINESS_WORD_RE = /(?:Quality|Marketing|Business|Smart|Work|Hub|Connector|Innovation|System|Solution|Technology|Network|Enterprise)/i;
@@ -2640,6 +2645,28 @@ function getCardDomainBase(value) {
 
 function getCardDomainBases(rec = {}) {
   return [...new Set([getCardDomainBase(rec.웹주소), getCardDomainBase(rec.이메일)].filter(Boolean))];
+}
+
+function normalizeDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function applyBusinessCardContactNameHint(rec, issues = []) {
+  if (!rec) return false;
+  const keys = [];
+  const email = String(rec.이메일 || "").trim().toLowerCase();
+  if (email) keys.push(`e:${email}`);
+  for (const phone of [rec.휴대폰, rec.전화]) {
+    const digits = normalizeDigits(phone);
+    if (digits.length >= 8) keys.push(`m:${digits}`);
+  }
+  const hintedName = keys.map(k => CARD_CONTACT_NAME_HINTS[k]).find(Boolean);
+  if (!hintedName || businessCardPersonNameQuality(hintedName) <= businessCardPersonNameQuality(rec.담당자)) return false;
+  issues.push(`담당자 연락처 보정: ${rec.담당자 || "공백"} → ${hintedName}`);
+  rec.담당자 = hintedName;
+  rec._personCandidateSource = "card-contact-hint";
+  rec._needsReview = true;
+  return true;
 }
 
 function canonicalizeBusinessCardCompanyName(name, rec = {}) {
@@ -2877,6 +2904,7 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
       if (!rec.담당직함) rec.담당직함 = fallback.title;
     }
   }
+  applyBusinessCardContactNameHint(rec, issues);
   if (issues.length) {
     rec._cardFieldIssues = issues.join(" | ");
     rec._needsReview = true;
@@ -8176,6 +8204,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.54",
+    date: "2026-05-17 13:05",
+    title: "연락처 기반 이름 복구",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "KICPA 명함처럼 OCR이 첫 글자 전을 끝까지 누락해 담당자명이 생수로 남는 경우 연락처 단서로 전생수 복구" },
+      { type: "fix", text: "이메일·휴대폰 기반 이름 힌트를 명함 이미지 파이프라인 정규화 단계에만 적용해 다른 입력 경로 영향 차단" }
+    ],
+    learnLog: [
+      { text: "OCR 원문에 누락된 글자는 레이아웃 병합만으로 복구되지 않으므로 검증된 연락처별 이름 힌트를 학습 데이터로 보존" }
+    ]
+  },
   {
     version: "v9.53",
     date: "2026-05-17 12:55",
