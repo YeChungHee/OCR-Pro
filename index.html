@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.51 — 대표자 담당자 동시 기록</title>
+<title>OCR Pro v9.52 — 세로이름 첫글자 복구</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.51</span>
+  <span class="ver">v9.52</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -2737,6 +2737,15 @@ function extractBusinessCardPersonCandidate(rawText = "") {
   const titleWords = "대표이사|대표|CEO|전문위원|전문평가위원|위원장|이사|전무|상무|부장|차장|과장|대리|팀장|실장|소장|원장|세무사|회계사";
   const titleOnlyRe = new RegExp(`^(?:${titleWords})$`, "i");
   const usableName = name => /^[가-힣]{2,4}$/.test(name) && !titleOnlyRe.test(name) && !isBadBusinessCardPersonName(name) && !(typeof NON_NAME_KO !== "undefined" && NON_NAME_KO.has(name));
+  const nearbyTitle = i => {
+    for (const line of [lines[i + 1], lines[i - 1], lines[i + 2], lines[i - 2]].filter(Boolean)) {
+      const compactLine = line.replace(/\s+/g, "");
+      if (/(?:세무회계사무소|회계사무소|사무소|주식회사|유한회사|재단법인|사단법인|보증기금)$/.test(compactLine)) continue;
+      const m = line.match(new RegExp(titleWords, "i"));
+      if (m) return m[0];
+    }
+    return "";
+  };
   for (const line of lines) {
     const compactLine = line.replace(/\s+/g, "");
     if (/(?:세무회계사무소|회계사무소|보증기금)$/.test(compactLine)) continue;
@@ -2751,9 +2760,18 @@ function extractBusinessCardPersonCandidate(rawText = "") {
   }
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i].replace(/\s+/g, "");
+    const prevCompact = String(lines[i - 1] || "").replace(/\s+/g, "");
+    const nextCompact = String(lines[i + 1] || "").replace(/\s+/g, "");
+    const title = nearbyTitle(i);
+    if (!title) continue;
+    const mergedNames = [];
+    if (/^[가-힣]$/.test(prevCompact) && /^[가-힣]{2,3}$/.test(compact)) mergedNames.push(prevCompact + compact);
+    if (/^[가-힣]{2,3}$/.test(compact) && /^[가-힣]$/.test(nextCompact)) mergedNames.push(compact + nextCompact);
+    for (const mergedName of mergedNames) {
+      if (usableName(mergedName)) return { name: mergedName, title };
+    }
     if (!usableName(compact)) continue;
-    const near = [lines[i - 1], lines[i + 1]].filter(Boolean).join(" ");
-    if (new RegExp(titleWords, "i").test(near)) return { name: compact, title: (near.match(new RegExp(titleWords, "i")) || [""])[0] };
+    return { name: compact, title };
   }
   return null;
 }
@@ -2813,10 +2831,10 @@ function normalizeBusinessCardImageRecord(rec, rawText = "") {
     const isCeo = typeof isCeoTitle === "function" && isCeoTitle(personCandidate.title);
     if (isCeo) {
       if (!rec.대표자) rec.대표자 = personCandidate.name;
-      if (!rec.담당자) rec.담당자 = personCandidate.name;
+      if (!rec.담당자 || businessCardPersonNameQuality(personCandidate.name) > businessCardPersonNameQuality(rec.담당자)) rec.담당자 = personCandidate.name;
       if (!rec.담당직함) rec.담당직함 = personCandidate.title;
     } else {
-      if (!rec.담당자) rec.담당자 = personCandidate.name;
+      if (!rec.담당자 || businessCardPersonNameQuality(personCandidate.name) > businessCardPersonNameQuality(rec.담당자)) rec.담당자 = personCandidate.name;
       if (!rec.담당직함 && (!rec.담당자 || rec.담당자 === personCandidate.name)) rec.담당직함 = personCandidate.title;
     }
     rec._personCandidateSource = "card-title-context";
@@ -8150,6 +8168,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.52",
+    date: "2026-05-17 12:45",
+    title: "세로이름 첫글자 복구",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "OCR이 전/생수/세무사처럼 첫 글자만 별도 줄로 분리한 경우 전생수로 우선 병합" },
+      { type: "fix", text: "명함 이름 후보 선택 시 직함 주변 2줄 문맥을 함께 보아 단일 글자+2글자 이름 조합을 먼저 평가" }
+    ],
+    learnLog: [
+      { text: "세로 명함에서 3글자 이름은 1+2 분할도 흔하므로 2글자 후보보다 병합 후보를 우선해야 함" }
+    ]
+  },
   {
     version: "v9.51",
     date: "2026-05-17 00:45",
