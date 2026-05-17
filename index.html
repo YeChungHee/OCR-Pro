@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.56 — 세일즈맵 회사-고객 연결 안정화</title>
+<title>OCR Pro v9.57 — 세일즈맵 엑셀 업로드 형식 정렬</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.56</span>
+  <span class="ver">v9.57</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -6135,15 +6135,19 @@ function buildSalesMapPayload(r, context = {}) {
     peopleBody,
     meta: { 대표자명, 담당직원, peopleName, people직함, mobileTel, landlineTel, peopleEmail, mainCompanyName, mainCompanyRep, mainCompanyBizNo },
     excelRow: {
+      "People - 이름":               peopleName,
+      "People - 전화":               mobileTel,
+      "People - 이메일":             peopleEmail,
+      "People - 직함":               people직함,
       "Organization - 이름":         name,
-      "Organization - 영문명":       r.영문명||"",
+      "Organization - 주소":         r.주소||"",
       "Organization - 사업자번호":   r.사업자번호||"",
       "Organization - 대표자명":     대표자명,
       "Organization - 담당직원":     담당직원,
       "Organization - 담당직함":     담당직원 ? 직함원본 : "",
       "Organization - 전화":         landlineTel,
-      "Organization - 주소":         r.주소||"",
       "Organization - 웹 주소":      r.웹주소||"",
+      "Organization - 영문명":       r.영문명||"",
       "Organization - 기업형태":     r.기업형태||"",
       "Organization - 유입경로":     r.source==="전시회"?"전시회":"오프/행사",
       "Organization - 유입경로_상세":detailSource,
@@ -6151,15 +6155,7 @@ function buildSalesMapPayload(r, context = {}) {
       "Organization - FlowScore":    r.flowScore||"",
       "Organization - 매출(억)":     r.매출||"",
       "Organization - 영업이익":     r.영업이익||"",
-      "Organization - 설립일자":     r.설립일||"",
-      "People - 이름":               peopleName,
-      "People - 메인 회사":          mainCompanyName,
-      "People - 메인 회사 > 이름":   mainCompanyName,
-      "People - 메인 회사 > 대표자명":mainCompanyRep,
-      "People - 메인 회사 > 사업자번호":mainCompanyBizNo,
-      "People - 직함":               people직함,
-      "People - 전화":               mobileTel,
-      "People - 이메일":             peopleEmail
+      "Organization - 설립일자":     r.설립일||""
     }
   };
 }
@@ -8211,6 +8207,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.57",
+    date: "2026-05-17 13:55",
+    title: "세일즈맵 엑셀 업로드 형식 정렬",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "SalesMap 샘플 업로드 파일 기준으로 People 컬럼과 Organization 컬럼을 같은 행에 배치" },
+      { type: "fix", text: "샘플에 없는 People - 메인 회사 계열 임의 컬럼을 엑셀 출력에서 제거" },
+      { type: "improve", text: "엑셀 업로드 시 회사-고객 연결은 People 행의 Organization - 이름/주소 등 표준 컬럼으로 처리되도록 정렬" }
+    ],
+    learnLog: [
+      { text: "SalesMap 엑셀 이관은 People - 메인 회사 컬럼이 아니라 같은 행의 Organization - 이름 컬럼으로 고객 소속 회사를 연결함" }
+    ]
+  },
   {
     version: "v9.56",
     date: "2026-05-17 13:40",
