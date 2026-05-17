@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.54 — 연락처 기반 이름 복구</title>
+<title>OCR Pro v9.55 — 세일즈맵 People 필드 오류 수정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.54</span>
+  <span class="ver">v9.55</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -6116,10 +6116,6 @@ function buildSalesMapPayload(r, context = {}) {
   const mainCompanyName = name;
   const mainCompanyRep = 대표자명;
   const mainCompanyBizNo = (r.사업자번호 || "").trim();
-  addFieldOnce(peopleFieldList, "메인 회사", mainCompanyName);
-  addFieldOnce(peopleFieldList, "메인 회사 > 이름", mainCompanyName);
-  addFieldOnce(peopleFieldList, "메인 회사 > 대표자명", mainCompanyRep);
-  addFieldOnce(peopleFieldList, "메인 회사 > 사업자번호", mainCompanyBizNo);
 
   const organizationBody = {
     name,
@@ -6270,40 +6266,48 @@ function cloneSalesmapFieldList(fieldList = []) {
   return (Array.isArray(fieldList) ? fieldList : []).map(f => ({ ...f }));
 }
 
-function buildPeopleCompanyLinkFields(peopleBody = {}, org = {}) {
-  const fieldList = cloneSalesmapFieldList(peopleBody.fieldList);
-  addFieldOnce(fieldList, "메인 회사", org.name);
-  addFieldOnce(fieldList, "메인 회사 > 이름", org.name);
-  addFieldOnce(fieldList, "메인 회사 > 대표자명", org.representativeName);
-  addFieldOnce(fieldList, "메인 회사 > 사업자번호", org.businessNumber);
-  return fieldList;
+const SALESMAP_PEOPLE_ALLOWED_FIELD_NAMES = new Set(["직함", "전화", "이메일"]);
+
+function sanitizeSalesmapPeopleBody(peopleBody = {}) {
+  const { fieldList, ...rest } = peopleBody || {};
+  const safeFieldList = cloneSalesmapFieldList(fieldList).filter(f =>
+    SALESMAP_PEOPLE_ALLOWED_FIELD_NAMES.has(String(f.name || "").trim())
+  );
+  return safeFieldList.length ? { ...rest, fieldList: safeFieldList } : rest;
 }
 
 function buildSalesmapPeoplePayloadVariants(peopleBody, org = {}) {
   const orgId = String(org.id || "").trim();
   const orgName = String(org.name || "").trim();
-  const fieldList = buildPeopleCompanyLinkFields(peopleBody, org);
-  const base = { ...peopleBody, fieldList };
-  if (!orgId) return [{ label: "field-main-company", body: base }];
+  const base = sanitizeSalesmapPeopleBody(peopleBody);
+  if (!orgId) return [{ label: "people-basic", body: base }];
   return [
     {
-      label: "main-company-rich",
+      label: "organizationId",
+      body: { ...base, organizationId: orgId }
+    },
+    {
+      label: "mainOrganizationId",
+      body: { ...base, mainOrganizationId: orgId }
+    },
+    {
+      label: "mainCompanyId",
+      body: { ...base, mainCompanyId: orgId }
+    },
+    {
+      label: "companyId",
+      body: { ...base, companyId: orgId }
+    },
+    {
+      label: "company-name-hint",
       body: {
         ...base,
-        organizationId: orgId,
-        mainOrganizationId: orgId,
-        mainCompanyId: orgId,
-        companyId: orgId,
         organizationName: orgName,
         mainCompanyName: orgName,
         companyName: orgName
       }
     },
-    { label: "organizationId",     body: { ...base, organizationId: orgId } },
-    { label: "mainOrganizationId", body: { ...base, mainOrganizationId: orgId } },
-    { label: "mainCompanyId",      body: { ...base, mainCompanyId: orgId } },
-    { label: "companyId",          body: { ...base, companyId: orgId } },
-    { label: "field-main-company", body: base }
+    { label: "people-basic", body: base }
   ];
 }
 
@@ -6468,30 +6472,29 @@ async function pushToSalesmap() {
           peopleOkCount++;
           const peopleVerify = await verifySalesmapReadback("people", peopleId, {
             "전화": meta.mobileTel,
-            "이메일": meta.peopleEmail,
-            "메인 회사": meta.mainCompanyName
+            "이메일": meta.peopleEmail
           }, token);
           if (peopleVerify.status === "ok") {
             verifyOkCount++;
-            peopleLinkedCount++;
-            logLine.textContent += ` · 소속연결 완료(${peopleCreate.mode})`;
+            if (peopleCreate.mode !== "people-basic") {
+              peopleLinkedCount++;
+              logLine.textContent += ` · 소속연결 후보 적용(${peopleCreate.mode})`;
+            } else {
+              logLine.textContent += " · People 기본등록";
+            }
           } else if (peopleVerify.status === "partial") {
-            const linkMissing = peopleVerify.missing.includes("메인 회사");
-            if (linkMissing && peopleId) {
+            if (peopleCreate.mode === "people-basic" && peopleId && orgId) {
               const linkFix = await salesmapUpdatePeopleCompanyLink(peopleId, peopleBody, orgLink, token);
-              const retryVerify = await verifySalesmapReadback("people", peopleId, {
-                "메인 회사": meta.mainCompanyName
-              }, token);
-              if (retryVerify.status === "ok") {
-                verifyOkCount++;
+              if (linkFix.status === "ok" && linkFix.mode !== "people-basic") {
                 peopleLinkedCount++;
-                logLine.textContent += ` · 소속연결 보정완료(${linkFix.mode || peopleCreate.mode})`;
+                verifyPartialCount++;
+                logLine.textContent += ` ⚠️ People 부분등록: ${peopleVerify.missing.join(", ")} · 소속연결 후보 적용(${linkFix.mode})`;
               } else {
                 verifyPartialCount++;
                 logLine.textContent += ` ⚠️ People 부분등록: ${peopleVerify.missing.join(", ")}`;
               }
             } else {
-              if (!linkMissing) peopleLinkedCount++;
+              if (peopleCreate.mode !== "people-basic") peopleLinkedCount++;
               verifyPartialCount++;
               logLine.textContent += ` ⚠️ People 부분등록: ${peopleVerify.missing.join(", ")}`;
             }
@@ -8204,6 +8207,20 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.55",
+    date: "2026-05-17 13:20",
+    title: "세일즈맵 People 필드 오류 수정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "People 등록 payload에서 세일즈맵에 정의되지 않은 메인 회사 계열 fieldList 제거" },
+      { type: "fix", text: "개인 생성은 직함·전화·이메일만 fieldList로 전송하고 회사 소속은 top-level 연결 후보로 분리 시도" },
+      { type: "fix", text: "People 검증 기준에서 미정의 메인 회사 필드 검증을 제외해 회사 생성 후 개인 등록이 400 오류로 중단되는 문제 차단" }
+    ],
+    learnLog: [
+      { text: "세일즈맵 People API는 사용자 정의 필드가 정확히 존재할 때만 fieldList를 허용하므로 소속 연결 정보는 커스텀 필드와 분리해야 함" }
+    ]
+  },
   {
     version: "v9.54",
     date: "2026-05-17 13:05",
