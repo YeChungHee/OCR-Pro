@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.60 — 회원여부 기본값 저장</title>
+<title>OCR Pro v9.61 — 회원여부 기본값 저장</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.60</span>
+  <span class="ver">v9.61</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -4667,9 +4667,9 @@ const COL_MAP={
   "담당직함":  ["직함","담당직함","직위","title","position",
                 "Organization - 담당직함",
                 "People - 직함"],
-  "전화":      ["전화","전화번호","연락처","tel","phone","대표전화",
-                "Organization - 전화"],
-  "휴대폰":   ["휴대폰","핸드폰","모바일","mobile","cell",
+  "전화":      ["전화","전화번호","일반전화","대표전화","유선전화","연락처","tel","phone",
+                "Organization - 전화"],   /* ★ v9.61: "일반전화" alias 추가 */
+  "휴대폰":   ["휴대폰","핸드폰","모바일","휴대전화","mobile","cell",
                 "People - 전화"],
   "이메일":   ["이메일","메일","email","e-mail",
                 "People - 이메일",
@@ -4715,6 +4715,10 @@ function sheetRowToRec(row,colMap,src){
   r.웹주소=String(row[colMap["웹주소"]]||"").trim();
   r.업종=String(row[colMap["업종"]]||"").trim();
   r.기업형태=String(row[colMap["기업형태"]]||"").trim();
+  /* ★ v9.61: 전화 컬럼에 010 번호가 들어온 경우 → 휴대폰으로 재라우팅 */
+  if (r.전화 && !r.휴대폰 && typeof isMobile === "function" && isMobile(r.전화)) {
+    r.휴대폰 = r.전화; r.전화 = "";
+  }
   r.status="완료";
   r.신뢰도=calcReliability(r);
   return r;
