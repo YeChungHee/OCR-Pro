@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.58 — 회원여부 기본값 저장</title>
+<title>OCR Pro v9.59 — 회원여부 기본값 저장</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.58</span>
+  <span class="ver">v9.59</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -6072,6 +6072,14 @@ function addFieldOnce(fieldList, name, value) {
   else fieldList.push({ name, stringValue: v });
 }
 
+function addBoolField(fieldList, name, value) {
+  /* ★ v9.59: SalesMap Boolean 타입 필드 전용 — booleanValue 필수 */
+  const bv = Boolean(value);
+  const existing = fieldList.find(f => f.name === name);
+  if (existing) existing.booleanValue = bv;
+  else fieldList.push({ name, booleanValue: bv });
+}
+
 function buildSalesMapPayload(r, context = {}) {
   const exh = String(context.exh || "").trim();
   const 직함원본  = (r.담당직함 || "").trim();
@@ -6098,7 +6106,7 @@ function buildSalesMapPayload(r, context = {}) {
   addFieldOnce(orgFieldList, "주소", r.주소);
   addFieldOnce(orgFieldList, "웹 주소", r.웹주소);
   addFieldOnce(orgFieldList, "기업형태", r.기업형태);
-  addFieldOnce(orgFieldList, "회원여부", "false");
+  addBoolField(orgFieldList, "회원여부", false);   /* ★ v9.59: stringValue→booleanValue 수정 */
   addFieldOnce(orgFieldList, "매출(억)", r.매출);
   addFieldOnce(orgFieldList, "설립일자", r.설립일);
   addFieldOnce(orgFieldList, "부스번호", r.부스번호);
@@ -8209,6 +8217,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.59",
+    date: "2026-05-21 08:04",
+    title: "세일즈맵 회원여부 Boolean 필드 400 오류 핫픽스",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "addBoolField() 함수 신규 추가 — SalesMap Boolean 타입 필드를 booleanValue 키로 전송" },
+      { type: "fix", text: "Organization fieldList의 회원여부를 stringValue→booleanValue로 변경하여 Worker 400 Bad Request 해결" }
+    ],
+    learnLog: [
+      { text: "SalesMap fieldList 항목 중 Boolean 타입은 stringValue가 아닌 booleanValue로 보내야 함. 혼용 시 'booleanValue가 없습니다' 400 오류 발생" }
+    ]
+  },
   {
     version: "v9.58",
     date: "2026-05-17 14:10",
