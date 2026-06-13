@@ -1,0 +1,179 @@
+{
+  "_comment": "계획서 [codex]전시회_이메일중심_추출고도화_추가계획서_v1.0 §6 — 이메일 추출 fixture 15종 기대값",
+  "_generated": "2026-05-21",
+  "_runner": "verify-expo-email-fixtures.html",
+  "cases": [
+    {
+      "caseId": "E01",
+      "desc": "전시회 목록 테이블 이메일 컬럼",
+      "fixture": "E01_list_email.html",
+      "rec": { "회사명": "위아공작기계(주)", "웹주소": "http://www.wiamachine.com", "이메일": "sales@wiamachine.com" },
+      "sourceType": "initial_record",
+      "expectedEmail": "sales@wiamachine.com",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 80,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E02",
+      "desc": "상세 페이지 이메일: 라벨",
+      "fixture": "E02_detail_email.html",
+      "rec": { "회사명": "(주)테크솔루션", "웹주소": "https://techsolution.co.kr" },
+      "sourceType": "exhibition_detail",
+      "expectedEmail": "info@techsolution.co.kr",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 75,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E03",
+      "desc": "mailto 링크",
+      "fixture": "E03_mailto.html",
+      "rec": { "회사명": "(주)컴퍼니", "웹주소": "https://company.com" },
+      "sourceType": "exhibition_detail",
+      "expectedEmail": "sales@company.com",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 80,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E04",
+      "desc": "회사 홈페이지 contact 페이지",
+      "fixture": "E04_homepage_contact.html",
+      "rec": { "회사명": "ABC Co.", "웹주소": "https://abc-co.com" },
+      "sourceType": "homepage_contact",
+      "expectedEmail": "contact@abc-co.com",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 60,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E05",
+      "desc": "난독화 이메일 [at] [dot]",
+      "fixture": "E05_obfuscated_email.html",
+      "rec": { "회사명": "Company", "웹주소": "https://company.co.kr" },
+      "sourceType": "exhibition_detail",
+      "expectedEmail": "sales@company.co.kr",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 75,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E06",
+      "desc": "HTML entity / URL encoded",
+      "fixture": "E06_encoded_email.html",
+      "rec": { "회사명": "Company", "웹주소": "https://company.com" },
+      "sourceType": "exhibition_detail",
+      "expectedEmail": "sales@company.com",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 75,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E07",
+      "desc": "이미지 OCR fallback (stub)",
+      "fixture": "E07_image_email.meta.json",
+      "rec": { "회사명": "ImageOnly", "웹주소": "https://imageonly.com" },
+      "sourceType": "ocr_image",
+      "expectedEmail": "sales@imageonly.com",
+      "expectedStatus": "후보",
+      "expectedMinConfidence": 30,
+      "expectedDomainMatch": "match",
+      "note": "OCR(+8) + sales generic(+10) + domain match(+20) = 38점 → 낮음 경계. 후보로 평가 가능."
+    },
+    {
+      "caseId": "E08",
+      "desc": "PDF 브로슈어 (stub)",
+      "fixture": "E08_brochure_email.meta.json",
+      "rec": { "회사명": "Brochure Co.", "웹주소": "https://brochure-co.com" },
+      "sourceType": "pdf_brochure",
+      "expectedEmail": "info@brochure-co.com",
+      "expectedStatus": "후보",
+      "expectedMinConfidence": 40,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E09",
+      "desc": "privacy@ 단독 노출",
+      "fixture": "E09_privacy_only.html",
+      "rec": { "회사명": "Company", "웹주소": "https://company.com" },
+      "sourceType": "homepage_main",
+      "expectedEmail": "privacy@company.com",
+      "expectedStatus": "낮음",
+      "expectedMaxConfidence": 59,
+      "expectedDomainMatch": "match",
+      "note": "homepage_main(+30) + domain match(+20) - privacy risky(-40) = 10점 → 낮음."
+    },
+    {
+      "caseId": "E10",
+      "desc": "recruit@ 단독 노출",
+      "fixture": "E10_recruit_only.html",
+      "rec": { "회사명": "Company", "웹주소": "https://company.com" },
+      "sourceType": "homepage_main",
+      "expectedEmail": "recruit@company.com",
+      "expectedStatus": "낮음",
+      "expectedMaxConfidence": 59,
+      "expectedDomainMatch": "match"
+    },
+    {
+      "caseId": "E11",
+      "desc": "문의폼만 존재",
+      "fixture": "E11_contact_form_only.html",
+      "rec": { "회사명": "FormOnly Co.", "웹주소": "https://formonly.com" },
+      "sourceType": "homepage_contact",
+      "expectedEmail": "",
+      "expectedStatus": "문의폼",
+      "expectedMaxConfidence": 0,
+      "expectedContactFormUrl": "https://formonly.com/contact"
+    },
+    {
+      "caseId": "E12",
+      "desc": "여러 이메일 — 영업/대표 우선",
+      "fixture": "E12_multiple_emails.html",
+      "rec": { "회사명": "Multi Co.", "웹주소": "https://multi-co.com" },
+      "sourceType": "homepage_contact",
+      "expectedEmail": "sales@multi-co.com",
+      "expectedStatus": "확정",
+      "expectedMinConfidence": 60,
+      "expectedDomainMatch": "match",
+      "note": "sales@ 가 +10 generic + domain match +20 + homepage_contact +30 = 60+ → recruit@ (-40) 보다 우선 선택돼야 함."
+    },
+    {
+      "caseId": "E13",
+      "desc": "도메인 불일치 — 검수 필요",
+      "fixture": "E13_domain_mismatch.html",
+      "rec": { "회사명": "Company", "웹주소": "https://company.com" },
+      "sourceType": "homepage_main",
+      "expectedEmail": "companyceo@gmail.com",
+      "expectedStatus": "낮음",
+      "expectedMaxConfidence": 59,
+      "expectedDomainMatch": "mismatch",
+      "expectedReviewRequired": true,
+      "note": "homepage_main(+30) - free domain(-15) = 15점 → 낮음. 도메인 불일치 검수 플래그."
+    },
+    {
+      "caseId": "E14",
+      "desc": "KIMES exhiCodiEmail (도메인 불일치)",
+      "fixture": "E14_api_email.json",
+      "rec": { "회사명": "메디테크코리아", "웹주소": "https://meditech-kr.com" },
+      "comp": { "_apiEmail": "kim.codi@kintex-event.com" },
+      "sourceType": "exhibition_detail_api",
+      "expectedEmail": "kim.codi@kintex-event.com",
+      "expectedStatus": "낮음",
+      "expectedMaxConfidence": 59,
+      "expectedDomainMatch": "mismatch",
+      "expectedReviewRequired": true,
+      "note": "API(+40) - 도메인 불일치(-20) = 20점 → 낮음. 자동 전송 보류 + 검수 표시."
+    },
+    {
+      "caseId": "E15",
+      "desc": "어떤 경로에도 이메일 없음",
+      "fixture": "E15_no_email.html",
+      "rec": { "회사명": "(주)침묵상사", "웹주소": "" },
+      "sourceType": "homepage_main",
+      "expectedEmail": "",
+      "expectedStatus": "없음",
+      "expectedMaxConfidence": 0
+    }
+  ]
+}

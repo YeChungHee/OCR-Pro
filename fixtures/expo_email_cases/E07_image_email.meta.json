@@ -1,0 +1,14 @@
+{
+  "_comment": "E07 — 이메일이 이미지에만 있는 경우. 실제 PNG는 OCR 파이프라인 통합 단계에서 추가하며, 현재는 OCR 결과 텍스트 stub으로 대체.",
+  "caseId": "E07",
+  "stage": "image_ocr_stub",
+  "ocrText": "Contact: sales@imageonly.com  /  Tel 02-555-1234",
+  "sourceType": "ocr_image",
+  "sourceUrl": "https://imageonly.com/banner.png",
+  "expected": {
+    "email": "sales@imageonly.com",
+    "minConfidence": 1,
+    "status": "낮음",
+    "note": "OCR만으로는 +8점 → +10(generic local)+0 = 약 18점 → 낮음 등급"
+  }
+}

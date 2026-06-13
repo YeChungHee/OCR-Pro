@@ -1,0 +1,30 @@
+{
+  "_comment": "E14 — KIMES 스타일 상세 API 응답. normalizeAPICompanies + huntEmailForCompany 가 basicInfo.exhiCodiEmail 을 후보로 투입해야 함.",
+  "caseId": "E14",
+  "apiResponse": {
+    "basicInfo": {
+      "companyName": "메디테크코리아",
+      "homepage": "https://meditech-kr.com",
+      "exhiCodiName": "김전시",
+      "exhiCodiEmail": "kim.codi@kintex-event.com",
+      "exhiCodiTel": "031-555-1234",
+      "boothNo": "B-203"
+    },
+    "onlineInfo": {
+      "onlineInfo": { "homepage": "https://meditech-kr.com" }
+    },
+    "onlineDisplayItemList": [
+      { "itemName": "의료기기" },
+      { "itemName": "진단장비" }
+    ]
+  },
+  "expected": {
+    "회사명": "메디테크코리아",
+    "웹주소": "https://meditech-kr.com",
+    "_apiEmail": "kim.codi@kintex-event.com",
+    "sourceType": "exhibition_detail_api",
+    "domainMatch": "mismatch",
+    "reviewRequired": true,
+    "note": "exhiCodiEmail 도메인(kintex-event.com)이 회사 홈페이지 도메인(meditech-kr.com)과 불일치 → _emailReviewRequired=true 로 검수 표시. 점수: +40(API) -20(불일치) -0(generic 미해당) = 20점 → 낮음."
+  }
+}

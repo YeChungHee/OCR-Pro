@@ -1,0 +1,12 @@
+<!-- E11: 문의폼만 존재, 이메일 없음 -->
+<!DOCTYPE html>
+<html><head><title>Contact Us</title></head><body>
+<h1>Contact Us</h1>
+<p>아래 양식을 작성해 문의해주세요.</p>
+<form action="/api/inquiry" method="POST">
+  <label>이름 <input name="name"></label>
+  <label>이메일 <input name="email" type="email"></label>
+  <label>문의내용 <textarea name="message"></textarea></label>
+  <button type="submit">문의 보내기</button>
+</form>
+</body></html>

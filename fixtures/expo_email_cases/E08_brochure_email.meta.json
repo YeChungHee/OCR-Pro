@@ -1,0 +1,14 @@
+{
+  "_comment": "E08 — PDF 브로슈어 내 이메일. 실제 PDF는 별도 파이프라인. 현재는 PDF 텍스트 추출 결과 stub.",
+  "caseId": "E08",
+  "stage": "pdf_text_stub",
+  "pdfText": "ABOUT US ...... For business inquiries please contact info@brochure-co.com",
+  "sourceType": "pdf_brochure",
+  "sourceUrl": "https://brochure-co.com/files/intro.pdf",
+  "expected": {
+    "email": "info@brochure-co.com",
+    "minConfidence": 25,
+    "status": "낮음",
+    "note": "PDF +15 + generic local +10 = 25점 → 낮음. 회사 도메인 일치 시 +20 추가로 후보(45) 또는 확정 후보로 승격 가능."
+  }
+}

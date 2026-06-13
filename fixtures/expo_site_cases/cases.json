@@ -1,0 +1,85 @@
+{
+  "_comment": "계획서 [claude]전시회_적응형추출사다리_자가업그레이드_고도화계획서_v1.0 §10 — 사다리 회귀 fixture",
+  "_generated": "2026-06-13",
+  "_runner": "verify-expo-site-ladder.html",
+  "cases": [
+    {
+      "caseId": "S01",
+      "desc": "정적 목록 테이블 (NextRise형)",
+      "fixture": "S01_static_table.html",
+      "baseUrl": "https://nextrise.example/exhibitors",
+      "expectedRung": "dom_mining",
+      "expectedMinCompanies": 10,
+      "expectedVerdict": "ok"
+    },
+    {
+      "caseId": "S02",
+      "desc": "inline JSON 내장",
+      "fixture": "S02_inline_json.html",
+      "baseUrl": "https://inline.example/list",
+      "expectedRung": "json_api",
+      "expectedMinCompanies": 8,
+      "expectedVerdict": "ok"
+    },
+    {
+      "caseId": "S04",
+      "desc": ".do SPA 해시라우팅 — JS-전 HTML 비어있음",
+      "fixture": "S04_spa_empty.html",
+      "baseUrl": "https://cosmo.example/fairOnline.do",
+      "expectedRung": "manual",
+      "expectedMaxCompanies": 0,
+      "expectedVerdict": "fail",
+      "note": "정적 HTML엔 목록 없음 → 모든 자동 칸 실패 → 칸5 수동 캡처로 우아하게 폴백"
+    },
+    {
+      "caseId": "S05",
+      "desc": "반복 카드 클래스 불규칙 + heading 회사명",
+      "fixture": "S05_irregular_cards.html",
+      "baseUrl": "https://irregular.example/list",
+      "expectedRung": "dom_mining",
+      "expectedMinCompanies": 9,
+      "expectedVerdict": "ok"
+    },
+    {
+      "caseId": "S07",
+      "desc": "빈 목록 — verdict=fail 정확 판정",
+      "fixture": "S07_empty_list.html",
+      "baseUrl": "https://empty.example/list",
+      "expectedRung": "manual",
+      "expectedMaxCompanies": 0,
+      "expectedVerdict": "fail"
+    },
+    {
+      "caseId": "S08",
+      "desc": "메뉴를 회사명으로 오인식 — garbage 과다 → verdict=fail",
+      "fixture": "S08_garbage_names.html",
+      "baseUrl": "https://garbage.example/list",
+      "expectedRung": "manual",
+      "expectedVerdict": "fail",
+      "note": "DOM 마이닝이 nav를 잡아도 garbageRate>0.3 으로 fail 판정되어 채택 거부돼야 함"
+    },
+    {
+      "caseId": "S06",
+      "desc": "AI 셀렉터 추론 (mock 응답) — 비정형 구조",
+      "fixture": "S05_irregular_cards.html",
+      "baseUrl": "https://aimock.example/list",
+      "mode": "ai_mock",
+      "aiMockConfig": { "listSelector": "article.item", "nameSelector": "h3", "linkSelector": "a" },
+      "expectedRung": "ai_selector",
+      "expectedMinCompanies": 9,
+      "expectedVerdict": "ok"
+    },
+    {
+      "caseId": "S09",
+      "desc": "학습 프리셋 적중 후 사이트 개편 → 재검증 실패 → 폐기→재탐색",
+      "fixture": "S01_static_table.html",
+      "baseUrl": "https://relearn.example/list",
+      "mode": "learned_stale",
+      "staleConfig": { "strategy": "ai_selector", "listSelector": "div.OLD-SELECTOR-GONE" },
+      "expectedRung": "dom_mining",
+      "expectedMinCompanies": 10,
+      "expectedVerdict": "ok",
+      "note": "낡은 학습 셀렉터로는 0건 → invalidate → DOM 마이닝으로 자가 복구"
+    }
+  ]
+}

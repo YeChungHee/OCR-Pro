@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>전시회 이메일 fixture 회귀 검증 (E01~E15)</title>
+<style>
+:root{--bg:#f8fafc;--card:#fff;--bdr:#e2e8f0;--txt:#0f172a;--sub:#475569;--mut:#94a3b8;--pri:#3b82f6;--grn:#16a34a;--grn-l:#dcfce7;--red:#dc2626;--red-l:#fee2e2;--yel:#ca8a04;--yel-l:#fef3c7}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt);font-size:13px;line-height:1.55}
+.wrap{max-width:1280px;margin:0 auto;padding:20px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--sub);font-size:12px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+button{font:inherit;font-weight:600;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+button:hover{filter:brightness(.92)}
+.summary{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-left:14px}
+.summary span b{color:var(--txt);font-weight:700;margin-left:3px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--bdr);text-align:left;vertical-align:top}
+th{background:#f1f5f9;font-weight:600;color:var(--sub);font-size:11px}
+tr.pass{background:var(--grn-l)}
+tr.fail{background:var(--red-l)}
+tr.warn{background:var(--yel-l)}
+.st{font-weight:700;font-size:11px}
+.st.pass{color:var(--grn)} .st.fail{color:var(--red)} .st.warn{color:var(--yel)}
+code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11.5px}
+.tiny{font-size:11px;color:var(--mut)}
+.tag{display:inline-block;background:#e0f2fe;color:#075985;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:6px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📧 전시회 이메일 fixture 회귀 검증 <span class="tag">v9.60 점수표 정합화 검증</span></h1>
+  <div class="sub">계획서 <code>[codex]전시회_이메일중심_추출고도화_추가계획서_v1.0.md §6</code> 의 E01~E15 fixture를 <code>index.html</code> 의 추출·점수·등급 로직과 동일 규칙으로 평가.</div>
+  <div class="card">
+    <button id="runBtn">▶ 전체 회귀 실행 (15건)</button>
+    <span class="summary" id="summary"></span>
+    <div class="tiny" style="margin-top:6px">로컬 파일 접근이라 <code>fetch()</code> 가 차단될 수 있어요. 브라우저에서 막히면 <code>OCR-Pro-실행.command</code> 로 띄운 서버 경로에서 열어주세요.</div>
+  </div>
+  <div class="card">
+    <table id="resultTbl">
+      <thead><tr>
+        <th>#</th><th>caseId</th><th>desc</th><th>예상 이메일</th><th>추출 이메일</th>
+        <th>예상 상태</th><th>실측 상태</th><th>신뢰도</th><th>도메인</th><th>검수</th><th>판정</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="tiny">실제 KIMES API/실 사이트 fixture 는 별도 트랙으로 진행 (Phase E3). 이 도구는 §6 기본 15종 회귀만 다룹니다.</div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   index.html v9.60 의 이메일 추출/점수/등급 로직과 동일 규칙을 inline 으로 옮긴 사본
+   (index.html 본체를 import 하기 어려운 정적 회귀 도구의 한계상)
+   ════════════════════════════════════════════════════════════════════ */
+function decodeHtmlEntitiesBasic(str){if(!str)return'';const el=document.createElement('textarea');el.innerHTML=str;return el.value;}
+function normalizeObfuscatedEmailText(text){
+  if(!text)return'';
+  return decodeHtmlEntitiesBasic(String(text))
+    .replace(/%40/gi,'@')
+    .replace(/\s*(?:\(|\[|\{)\s*(?:at|골뱅이|메일)\s*(?:\)|\]|\})\s*/gi,'@')
+    .replace(/\s+(?:at|골뱅이|메일)\s+/gi,'@')
+    .replace(/\s*(?:\(|\[|\{)\s*(?:dot|점)\s*(?:\)|\]|\})\s*/gi,'.')
+    .replace(/\s+(?:dot|점)\s+/gi,'.')
+    .replace(/\s*@\s*/g,'@')
+    .replace(/([a-zA-Z0-9_\-])\s*\.\s*([a-zA-Z0-9_\-])/g,'$1.$2');
+}
+const EMAIL_RE = /[a-z0-9!#$%&'*+\/=?^_`{|}~.-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+function extractEmailSafe(t){const m=String(t||'').toLowerCase().match(EMAIL_RE);return m?m[0]:'';}
+function extractEmailsAllSafe(t){return Array.from(new Set(String(t||'').toLowerCase().match(EMAIL_RE)||[]));}
+function getEmailRootDomain(v){
+  if(!v)return'';let host=String(v).trim();
+  try{if(/^https?:\/\//i.test(host))host=new URL(host).hostname;}catch(_){}
+  host=host.replace(/^mailto:/i,'').replace(/^www\./i,'').toLowerCase().split('/')[0].split('?')[0].split('#')[0];
+  const parts=host.split('.').filter(Boolean);if(parts.length<2)return host;
+  const kr2=new Set(['co.kr','or.kr','go.kr','ac.kr','ne.kr','re.kr','pe.kr']);
+  const last2=parts.slice(-2).join('.');
+  if(kr2.has(last2)&&parts.length>=3)return parts.slice(-3).join('.');
+  return parts.slice(-2).join('.');
+}
+function extractEmailCandidatesFromHtml(html, sourceType, sourceUrl){
+  if(!html)return [];
+  const candidates=[];
+  const push=(email,kind)=>{
+    const normalized=(email||'').replace(/^mailto:/i,'').split('?')[0].trim().toLowerCase();
+    if(!extractEmailSafe(normalized))return;
+    if(candidates.some(c=>c.email===normalized))return;
+    candidates.push({email:normalized,sourceType:kind||sourceType,sourceUrl:sourceUrl||''});
+  };
+  const mailtoRe=/href\s*=\s*["']mailto:([^"'>\s?]+)[^"'>]*["']/gi;
+  let m;while((m=mailtoRe.exec(html))!==null)push(m[1],`${sourceType}:mailto`);
+  const text=normalizeObfuscatedEmailText(html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' '));
+  extractEmailsAllSafe(text).forEach(email=>push(email,sourceType));
+  return candidates;
+}
+const FREE = /^(gmail|naver|daum|hanmail|yahoo|hotmail|outlook|icloud|kakao|nate|paran)\./i;
+const EXT  = /^(wixsite|blogspot|cafe24|modoo\.at|imweb\.me|cyworld|tistory|github\.io|notion\.site|carrd\.co|business\.site|godohosting|mycafe24)\./i;
+const GENERIC = /^(sales|info|contact|cs|support|hello|inquiry|export|global|office|help|service|mail|biz|business|customer)$/i;
+const RISKY   = /^(no-?reply|donotreply|privacy|webmaster|admin|recruit|career|newsletter|abuse|spam|postmaster)$/i;
+function scoreExpoEmailCandidate(candidate, rec){
+  if(!candidate?.email)return 0;
+  const email=candidate.email.toLowerCase();
+  const [local,domain]=email.split('@');
+  if(!local||!domain)return 0;
+  let s=0;const src=candidate.sourceType||'';
+  if(/exhibition_detail_api/.test(src))s+=40;
+  else if(/exhibition_detail/.test(src))s+=35;
+  if(/homepage_mailto|:mailto/.test(src))s+=35;
+  else if(/homepage_(contact|support|inquiry|customer|cs|company|about|intro)/.test(src))s+=30;
+  else if(/homepage_main/.test(src))s+=30;
+  if(/(pdf|brochure|catalog)/i.test(src))s+=15;
+  if(/(ocr|image_email)/i.test(src))s+=12;   /* ★ v9.63: +8→+12 */
+  if(/initial_record|list_row|exhibition_list/i.test(src))s+=35;
+  const siteD=getEmailRootDomain(rec?.웹주소);const mailD=getEmailRootDomain(domain);
+  const free=FREE.test(domain);const ext=EXT.test(domain);
+  if(siteD&&mailD&&siteD===mailD)s+=40;   /* ★ v9.63: +20→+40 — 도메인 일치는 officialness 결정적 증거 */
+  else if(siteD&&mailD&&!free)s-=20;
+  if(GENERIC.test(local))s+=10;
+  if(RISKY.test(local))s-=40;
+  if(free)s-=15;
+  if(ext)s-=25;
+  return Math.max(0,Math.min(100,s));
+}
+function pickBestExpoEmail(cands, rec){
+  return (cands||[]).map(c=>({...c,confidence:scoreExpoEmailCandidate(c,rec)})).sort((a,b)=>b.confidence-a.confidence)[0]||null;
+}
+function detectContactFormUrl(html, sourceUrl){
+  if(!html||!sourceUrl)return'';
+  const hasSignal=/<form[\s\S]*?(email|e-mail|mail|문의|contact|inquiry|message|상담)[\s\S]*?<\/form>/i.test(html)
+    || /(문의하기|Contact\s*Us|Inquiry|온라인\s*문의|상담\s*문의)/i.test(html);
+  return hasSignal?sourceUrl:'';
+}
+function applyExpoEmailResult(rec, result){
+  if(!result||!result.email){
+    rec._emailStatus = rec._contactFormUrl?'문의폼':'없음';
+    rec._emailConfidence=0;rec._emailDomainMatch='';rec._emailReviewRequired=false;return;
+  }
+  const conf=Number(result.confidence)||0;
+  rec._emailConfidence=conf;rec._emailSourceType=result.sourceType||'';rec._emailSourceUrl=result.sourceUrl||'';
+  const siteD=getEmailRootDomain(rec?.웹주소);const mailD=getEmailRootDomain((result.email.split('@')[1]||''));
+  rec._emailDomainMatch=siteD&&mailD?(siteD===mailD?'match':'mismatch'):'unknown';
+  if(conf>=80){rec.이메일=result.email;rec._emailStatus='확정';rec._emailCandidate='';rec._emailReviewRequired=rec._emailDomainMatch==='mismatch';}
+  else if(conf>=60){rec._emailCandidate=result.email;rec._emailStatus='후보';rec._emailReviewRequired=true;if(!rec.이메일||rec.이메일===result.email)rec.이메일='';}
+  else if(conf>=1){rec._emailCandidate=result.email;rec._emailStatus='낮음';rec._emailReviewRequired=true;if(!rec.이메일||rec.이메일===result.email)rec.이메일='';}
+  else{rec._emailStatus=rec._contactFormUrl?'문의폼':'없음';rec._emailReviewRequired=false;}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Runner
+   ════════════════════════════════════════════════════════════════════ */
+async function runOne(c, idx){
+  const rec={...c.rec};
+  const sourceUrl = c.fixture && /\.html$/i.test(c.fixture) ? `https://example.fixture/${c.fixture}` : '';
+
+  // 1) HTML fixture 로드 (현실에서는 fetch; 로컬 file:// 차단 시 안내)
+  let html=null, ocrOrPdfText=null, apiPayload=null;
+  if(c.fixture && /\.html$/i.test(c.fixture)){
+    try{
+      const res=await fetch(`fixtures/expo_email_cases/${c.fixture}`);
+      html=await res.text();
+    }catch(e){
+      return { c, idx, pass:false, note:`HTML fixture 로드 실패 (file:// CORS 가능): ${e.message}` };
+    }
+  } else if(c.fixture && /\.meta\.json$/i.test(c.fixture)){
+    try{
+      const res=await fetch(`fixtures/expo_email_cases/${c.fixture}`);
+      const meta=await res.json();
+      ocrOrPdfText = meta.ocrText || meta.pdfText || '';
+    }catch(e){
+      return { c, idx, pass:false, note:`stub fixture 로드 실패: ${e.message}` };
+    }
+  } else if(c.fixture && /\.json$/i.test(c.fixture)){
+    try{
+      const res=await fetch(`fixtures/expo_email_cases/${c.fixture}`);
+      const j=await res.json();
+      apiPayload = j.apiResponse || j;
+    }catch(e){
+      return { c, idx, pass:false, note:`API fixture 로드 실패: ${e.message}` };
+    }
+  }
+
+  // 2) sourceType 별 후보 풀 구성
+  const candidates=[];
+  if(rec.이메일) candidates.push({email:rec.이메일, sourceType:'initial_record', sourceUrl});
+  if(html){
+    const kind = c.sourceType || 'exhibition_detail';
+    const subKind = /homepage_/.test(kind) ? kind : (kind === 'homepage_main' ? 'homepage_main' : kind);
+    candidates.push(...extractEmailCandidatesFromHtml(html, subKind, sourceUrl));
+    const formUrl = detectContactFormUrl(html, c.expectedContactFormUrl || sourceUrl);
+    if(formUrl && !rec._contactFormUrl) rec._contactFormUrl = c.expectedContactFormUrl || sourceUrl;
+  }
+  if(ocrOrPdfText){
+    const kind = c.sourceType || 'ocr_image';
+    extractEmailsAllSafe(ocrOrPdfText).forEach(em=>{
+      candidates.push({email:em, sourceType:kind, sourceUrl: c.fixture ? `fixture:${c.fixture}` : ''});
+    });
+  }
+  if(apiPayload){
+    // E14 KIMES — basicInfo.exhiCodiEmail 을 detail_api 후보로 투입
+    const basic = apiPayload.basicInfo || {};
+    const apiEmail = basic.exhiCodiEmail || basic.exhibitorEmail || basic.contactEmail || '';
+    if(apiEmail){
+      candidates.push({email: String(apiEmail).trim().toLowerCase(), sourceType:'exhibition_detail_api', sourceUrl:''});
+    }
+  }
+
+  // 3) best pick + apply
+  const best = pickBestExpoEmail(candidates, rec);
+  applyExpoEmailResult(rec, best);
+
+  // 4) 검증
+  const reasons=[];
+  const expEmail = (c.expectedEmail||'').toLowerCase();
+  const actEmail = (rec.이메일 || rec._emailCandidate || '').toLowerCase();
+  if(expEmail && actEmail !== expEmail) reasons.push(`이메일 mismatch (예상 ${expEmail} / 실측 ${actEmail||'∅'})`);
+  if(!expEmail && actEmail) reasons.push(`이메일이 추출되면 안 되는데 ${actEmail} 가 추출됨`);
+
+  if(c.expectedStatus && rec._emailStatus !== c.expectedStatus) reasons.push(`상태 mismatch (예상 ${c.expectedStatus} / 실측 ${rec._emailStatus})`);
+
+  if(typeof c.expectedMinConfidence==='number' && rec._emailConfidence < c.expectedMinConfidence)
+    reasons.push(`신뢰도 부족 (${rec._emailConfidence} < ${c.expectedMinConfidence})`);
+  if(typeof c.expectedMaxConfidence==='number' && rec._emailConfidence > c.expectedMaxConfidence)
+    reasons.push(`신뢰도 초과 (${rec._emailConfidence} > ${c.expectedMaxConfidence})`);
+
+  if(c.expectedDomainMatch && rec._emailDomainMatch && c.expectedDomainMatch !== rec._emailDomainMatch)
+    reasons.push(`도메인 매칭 mismatch (예상 ${c.expectedDomainMatch} / 실측 ${rec._emailDomainMatch})`);
+
+  if(c.expectedReviewRequired === true && !rec._emailReviewRequired)
+    reasons.push(`검수 플래그가 켜져야 함 (_emailReviewRequired)`);
+
+  if(c.expectedContactFormUrl && !rec._contactFormUrl)
+    reasons.push(`문의폼 URL 미감지`);
+
+  return { c, idx, rec, pass: reasons.length===0, note: reasons.join(' · ') };
+}
+
+async function runAll(){
+  const res = await fetch('fixtures/expo_email_cases/cases.json').catch(()=>null);
+  if(!res || !res.ok){ alert('cases.json 로드 실패 — file:// 경로면 OCR-Pro-실행.command 서버로 띄워주세요.'); return; }
+  const { cases } = await res.json();
+  const results=[];
+  for(let i=0;i<cases.length;i++){
+    results.push(await runOne(cases[i], i+1));
+  }
+  render(results);
+}
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function render(results){
+  const tb = document.querySelector('#resultTbl tbody');
+  tb.innerHTML = results.map(r=>{
+    const cls = r.pass ? 'pass' : 'fail';
+    const stLabel = r.pass ? '✅ PASS' : '❌ FAIL';
+    const rec = r.rec || {};
+    return `<tr class="${cls}">
+      <td>${r.idx}</td>
+      <td><b>${esc(r.c.caseId)}</b></td>
+      <td>${esc(r.c.desc)}</td>
+      <td>${esc(r.c.expectedEmail||'')}</td>
+      <td>${esc(rec.이메일 || rec._emailCandidate || '')}</td>
+      <td>${esc(r.c.expectedStatus||'')}</td>
+      <td>${esc(rec._emailStatus||'')}</td>
+      <td>${esc(rec._emailConfidence!=null?rec._emailConfidence:'')}</td>
+      <td>${esc(rec._emailDomainMatch||'')}</td>
+      <td>${rec._emailReviewRequired?'⚠️':''}</td>
+      <td class="st ${r.pass?'pass':'fail'}">${stLabel}${r.note?`<div class="tiny" style="font-weight:400;color:var(--sub)">${esc(r.note)}</div>`:''}</td>
+    </tr>`;
+  }).join('');
+  const pass = results.filter(r=>r.pass).length;
+  const fail = results.length - pass;
+  document.querySelector('#summary').innerHTML = `<span>총<b>${results.length}</b></span> <span style="color:var(--grn)">PASS<b>${pass}</b></span> <span style="color:var(--red)">FAIL<b>${fail}</b></span>`;
+}
+
+document.getElementById('runBtn').addEventListener('click', runAll);
+</script>
+</body>
+</html>

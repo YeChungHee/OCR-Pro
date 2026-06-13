@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SalesMap 푸시 도구 — booleanValue 핫픽스 적용판</title>
+<style>
+:root{--bg:#f8fafc;--card:#fff;--bdr:#e2e8f0;--txt:#0f172a;--sub:#475569;--mut:#94a3b8;--pri:#3b82f6;--pri-d:#2563eb;--grn:#16a34a;--grn-l:#dcfce7;--red:#dc2626;--red-l:#fee2e2;--yel:#ca8a04;--yel-l:#fef3c7;--r:8px;--sh:0 1px 3px rgba(0,0,0,.06)}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sans-serif;background:var(--bg);color:var(--txt);font-size:13px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:20px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--sub);font-size:12px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);box-shadow:var(--sh);padding:14px 16px;margin-bottom:14px}
+.row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+label{font-size:11px;color:var(--sub);font-weight:600;min-width:90px}
+input[type=text],input[type=password],textarea{font:inherit;border:1px solid var(--bdr);border-radius:6px;padding:6px 9px;background:#fff;color:var(--txt);outline:none}
+input[type=text],input[type=password]{flex:1;min-width:280px}
+input:focus,textarea:focus{border-color:var(--pri)}
+textarea{width:100%;min-height:240px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:11.5px;resize:vertical}
+button{font:inherit;font-weight:600;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+button:hover{background:var(--pri-d)}
+button.sec{background:#fff;color:var(--sub);border:1px solid var(--bdr)}
+button.sec:hover{background:#f1f5f9;color:var(--txt)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.btnrow{display:flex;gap:8px;align-items:center;margin-top:6px}
+.hint{font-size:11px;color:var(--mut);margin-top:4px}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th,.tbl td{padding:7px 8px;border-bottom:1px solid var(--bdr);text-align:left;vertical-align:top}
+.tbl th{background:#f1f5f9;font-weight:600;color:var(--sub);font-size:11px;position:sticky;top:0}
+.tbl tr.ok{background:var(--grn-l)}
+.tbl tr.err{background:var(--red-l)}
+.tbl tr.dup{background:var(--yel-l)}
+.tbl tr.pending{background:#fff}
+.tbl .st{font-size:11px;font-weight:600}
+.st.ok{color:var(--grn)} .st.err{color:var(--red)} .st.dup{color:var(--yel)} .st.pending{color:var(--mut)}
+.tbl td.msg{font-size:11px;color:var(--sub);max-width:380px;word-break:break-all}
+.bar-outer{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin:8px 0}
+.bar-inner{height:100%;background:var(--pri);width:0;transition:width .2s}
+.tag{display:inline-block;background:#e0f2fe;color:#075985;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600}
+.k{background:#e2e8f0;padding:1px 5px;border-radius:3px;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.warn{background:var(--yel-l);color:var(--yel);padding:8px 10px;border-radius:6px;font-size:11.5px;margin-bottom:10px}
+.summary{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-top:6px;flex-wrap:wrap}
+.summary span b{color:var(--txt);font-weight:700;margin-left:3px}
+.flex{display:flex;gap:8px;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📤 SalesMap 푸시 도구 <span class="tag">v9.59 booleanValue 핫픽스 적용</span></h1>
+  <div class="sub">OCR Pro 본 앱과 동일한 Cloudflare Worker · SalesMap API 경로로 회사+담당자를 등록합니다. <code class="k">회원여부</code> 필드는 Boolean 타입(<code class="k">booleanValue:false</code>)로 전송합니다.</div>
+
+  <div class="card">
+    <div class="row">
+      <label>Worker URL</label>
+      <input type="text" id="workerUrl" placeholder="https://ocr-pro-worker.example.workers.dev">
+      <button class="sec" id="saveCreds">저장</button>
+    </div>
+    <div class="row">
+      <label>SalesMap Token</label>
+      <input type="password" id="token" placeholder="Bearer ... (OCR Pro 설정과 동일 키 사용)">
+      <button class="sec" id="loadCreds">OCR Pro 설정 불러오기</button>
+    </div>
+    <div class="hint">localStorage 키: <code class="k">ocr_worker_url</code> / <code class="k">ocr_salesmap_token</code> — OCR Pro 본 앱과 공유됩니다.</div>
+  </div>
+
+  <div class="card">
+    <div class="flex" style="justify-content:space-between;margin-bottom:6px">
+      <strong style="font-size:13px">📋 푸시할 회사 데이터 (TSV/JSON)</strong>
+      <div class="flex">
+        <button class="sec" id="loadSample">샘플 6건 채우기</button>
+        <button class="sec" id="clearData">초기화</button>
+      </div>
+    </div>
+    <div class="warn">
+      <strong>입력 형식</strong>: 첫 줄은 헤더, 탭으로 구분. 필수 열은 <code class="k">회사명</code>. 옵션:
+      <code class="k">사업자번호</code> · <code class="k">대표자</code> · <code class="k">담당자</code> · <code class="k">담당직함</code> ·
+      <code class="k">전화</code> · <code class="k">휴대폰</code> · <code class="k">이메일</code> · <code class="k">웹주소</code> ·
+      <code class="k">주소</code> · <code class="k">기업형태</code> · <code class="k">업종</code> · <code class="k">아이템</code> ·
+      <code class="k">유입경로</code> · <code class="k">유입경로_상세</code>
+    </div>
+    <textarea id="dataInput" placeholder="회사명&#9;사업자번호&#9;대표자&#9;담당자&#9;담당직함&#9;전화&#9;휴대폰&#9;이메일&#9;웹주소&#9;주소&#9;유입경로&#9;유입경로_상세&#10;엠스틸(유)&#9;&#9;&#9;&#9;&#9;&#9;&#9;&#9;&#9;&#9;오프/행사&#9;비즈스페이스"></textarea>
+    <div class="btnrow">
+      <button id="parseBtn">데이터 파싱 →</button>
+      <button id="pushBtn" disabled>🚀 푸시 시작</button>
+      <button id="retryFailedBtn" class="sec" disabled>↻ 실패만 재시도</button>
+      <span class="summary" id="summary"></span>
+    </div>
+    <div class="bar-outer"><div class="bar-inner" id="bar"></div></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <strong style="font-size:13px">📊 결과</strong>
+    <div style="max-height:520px;overflow:auto;margin-top:8px;border:1px solid var(--bdr);border-radius:6px">
+      <table class="tbl" id="resultTbl">
+        <thead><tr>
+          <th style="width:30px">#</th><th>회사명</th><th>사업자번호</th><th>상태</th><th>orgId</th><th class="msg">메시지</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   설정 로드/저장
+   ═══════════════════════════════════════════════════ */
+const $ = sel => document.querySelector(sel);
+const SALESMAP_BASE = "https://salesmap.kr/api";
+
+function loadCreds() {
+  $("#workerUrl").value = localStorage.getItem("ocr_worker_url") || "";
+  $("#token").value     = localStorage.getItem("ocr_salesmap_token") || "";
+}
+function saveCreds() {
+  const w = $("#workerUrl").value.trim();
+  const t = $("#token").value.trim();
+  if (w) localStorage.setItem("ocr_worker_url", w); else localStorage.removeItem("ocr_worker_url");
+  if (t) localStorage.setItem("ocr_salesmap_token", t); else localStorage.removeItem("ocr_salesmap_token");
+  alert("저장 완료 — OCR Pro 본 앱과 동기화됩니다.");
+}
+$("#loadCreds").addEventListener("click", loadCreds);
+$("#saveCreds").addEventListener("click", saveCreds);
+loadCreds();
+
+/* ═══════════════════════════════════════════════════
+   샘플 — 직전 실패 6건
+   ═══════════════════════════════════════════════════ */
+const SAMPLE = `회사명\t사업자번호\t대표자\t담당자\t담당직함\t전화\t휴대폰\t이메일\t웹주소\t주소\t유입경로\t유입경로_상세
+엠스틸(유)\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스
+에코바스\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스
+원진홈플랜(주)\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스
+빌드안\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스
+보톨로만\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스
+(주)베오라\t\t\t\t\t\t\t\t\t\t오프/행사\t비즈스페이스`;
+$("#loadSample").addEventListener("click", () => { $("#dataInput").value = SAMPLE; });
+$("#clearData").addEventListener("click", () => { $("#dataInput").value = ""; renderRows([]); });
+
+/* ═══════════════════════════════════════════════════
+   TSV/JSON 파싱
+   ═══════════════════════════════════════════════════ */
+function parseInput(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  // JSON array 형태
+  if (text.startsWith("[") || text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (e) { /* fallthrough → TSV */ }
+  }
+  // TSV
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = lines[0].split("\t").map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const cells = line.split("\t");
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (cells[i] || "").trim(); });
+    return obj;
+  }).filter(r => (r.회사명 || "").trim());
+}
+
+/* ═══════════════════════════════════════════════════
+   SalesMap 페이로드 빌더 — index.html v9.59 로직 이식
+   ═══════════════════════════════════════════════════ */
+const CEO_TITLE_RE = /^(대표이사|대표|사장|회장|총장|원장|소장|이사장|CEO|CTO|CFO|COO|CMO|CSO|공동대표|각자대표|대표이사\s*사장|대표세무사|대표변호사|대표회계사|대표원장|감사|이사회의장)$/i;
+function isCeoTitle(t) {
+  if (!t) return false;
+  const s = t.trim();
+  if (/^대표/.test(s)) return true;
+  return CEO_TITLE_RE.test(s);
+}
+function isMobile(t) {
+  if (!t) return false;
+  const clean = t.trim().replace(/[\s\-.()+,]/g, "");
+  if (/^8210\d{7,8}$/.test(clean)) return true;
+  return /^0(10|11|16|17|18|19)\d{7,8}$/.test(clean);
+}
+function addFieldOnce(list, name, value) {
+  const v = String(value || "").trim();
+  if (!v) return;
+  const ex = list.find(f => f.name === name);
+  if (ex) ex.stringValue = v;
+  else list.push({ name, stringValue: v });
+}
+function addBoolField(list, name, value) {
+  /* ★ v9.59: SalesMap Boolean 필드 — booleanValue 키 필수 */
+  const bv = Boolean(value);
+  const ex = list.find(f => f.name === name);
+  if (ex) ex.booleanValue = bv;
+  else list.push({ name, booleanValue: bv });
+}
+function buildPayload(r) {
+  const 직함원본 = (r.담당직함 || "").trim();
+  const 이름원본 = (r.담당자 || "").trim();
+  const isCeo = isCeoTitle(직함원본);
+  const 대표자명 = isCeo ? (이름원본 || r.대표자 || "") : (r.대표자 || "");
+  const 담당직원 = isCeo
+    ? (이름원본 || 대표자명)
+    : ((이름원본 && 이름원본 !== (r.대표자 || "").trim()) ? 이름원본 : "");
+  const allPhones = [r.전화, r.휴대폰].filter(Boolean).map(p => p.trim()).filter(Boolean);
+  const mobileTel = allPhones.find(p => isMobile(p)) || "";
+  const landlineTel = allPhones.find(p => !isMobile(p)) || "";
+  const peopleName = 담당직원 || 대표자명;
+
+  const fl = [];
+  addFieldOnce(fl, "대표자명", 대표자명);
+  addFieldOnce(fl, "담당직원", 담당직원);
+  addFieldOnce(fl, "담당직함", 담당직원 ? 직함원본 : "");
+  addFieldOnce(fl, "사업자번호", r.사업자번호);
+  addFieldOnce(fl, "전화", landlineTel);
+  addFieldOnce(fl, "주소", r.주소);
+  addFieldOnce(fl, "웹 주소", r.웹주소);
+  addFieldOnce(fl, "기업형태", r.기업형태);
+  addBoolField(fl, "회원여부", false); /* ★ 핵심: booleanValue:false */
+  addFieldOnce(fl, "매출(억)", r["매출(억)"] || r.매출);
+  addFieldOnce(fl, "설립일자", r.설립일자 || r.설립일);
+  addFieldOnce(fl, "부스번호", r.부스번호);
+  addFieldOnce(fl, "아이템", r.아이템 || r.업종);
+  addFieldOnce(fl, "FlowScore", r.FlowScore || r.flowScore);
+  addFieldOnce(fl, "영업이익", r.영업이익);
+  addFieldOnce(fl, "유입경로", r.유입경로 || "오프/행사");
+  addFieldOnce(fl, "유입경로_상세", r.유입경로_상세 || r.유입경로상세 || "");
+
+  const name = (r.회사명 || "").trim();
+  const orgBody = {
+    name,
+    ...(r.웹주소    ? { website: r.웹주소 } : {}),
+    ...(landlineTel ? { phone: landlineTel } : {}),
+    ...(r.주소      ? { address: r.주소 } : {}),
+    fieldList: fl
+  };
+
+  const peopleFl = [];
+  addFieldOnce(peopleFl, "직함", 직함원본);
+  addFieldOnce(peopleFl, "전화", mobileTel);
+  addFieldOnce(peopleFl, "이메일", (r.이메일 || "").trim());
+  const peopleBody = peopleName ? { name: peopleName, fieldList: peopleFl } : null;
+
+  return { name, orgBody, peopleBody };
+}
+
+/* ═══════════════════════════════════════════════════
+   API 호출 — Worker 프록시 경유 (CORS 우회)
+   ═══════════════════════════════════════════════════ */
+async function salesmapFetch(path, method, body, token) {
+  const workerUrl = ($("#workerUrl").value || "").trim();
+  const target = SALESMAP_BASE + path;
+  const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
+
+  if (location.protocol === "https:" && !workerUrl) {
+    throw new Error("Worker URL이 필요합니다 (HTTPS 환경 CORS).");
+  }
+
+  if (workerUrl) {
+    const base = workerUrl.replace(/\/$/, "");
+    const payload = JSON.stringify({ url: target, method, headers, body: body || null });
+    let lastErr = null;
+    for (const ep of [base, `${base}/proxy`]) {
+      try {
+        const res = await fetch(ep, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload
+        });
+        if (!res.ok) throw new Error(`Worker ${res.status}: ${await res.text()}`);
+        return res.json();
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error("Worker 호출 실패");
+  }
+
+  const res = await fetch(target, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function findOrg(name, token) {
+  try {
+    const data = await salesmapFetch(`/v2/organization?name=${encodeURIComponent(name)}&limit=5`, "GET", null, token);
+    const list = data?.data?.organizations || data?.organizations || data?.data || [];
+    return Array.isArray(list) ? list.find(o => (o?.name || "").trim() === name.trim()) : null;
+  } catch (e) { return null; }
+}
+
+function entityId(res) {
+  return res?.data?.organization?.id || res?.data?.id || res?.organization?.id || res?.id || null;
+}
+
+/* ═══════════════════════════════════════════════════
+   렌더링 + 푸시 실행
+   ═══════════════════════════════════════════════════ */
+let ROWS = []; // [{raw, status, orgId, message}]
+
+function renderRows(rows) {
+  ROWS = rows;
+  const card = $("#resultCard");
+  const tb = $("#resultTbl tbody");
+  if (!rows.length) { card.style.display = "none"; tb.innerHTML = ""; updateSummary(); return; }
+  card.style.display = "";
+  tb.innerHTML = rows.map((r, i) => `
+    <tr class="${r.status}" data-idx="${i}">
+      <td>${i + 1}</td>
+      <td><strong>${esc(r.raw.회사명)}</strong></td>
+      <td>${esc(r.raw.사업자번호 || "")}</td>
+      <td class="st ${r.status}">${statusLabel(r.status)}</td>
+      <td>${esc(r.orgId || "")}</td>
+      <td class="msg">${esc(r.message || "")}</td>
+    </tr>`).join("");
+  updateSummary();
+}
+function statusLabel(s) {
+  return ({ pending: "⏳ 대기", ok: "✅ 등록", dup: "⚠️ 중복", err: "❌ 실패" })[s] || s;
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function updateSummary() {
+  const total = ROWS.length;
+  const ok = ROWS.filter(r => r.status === "ok").length;
+  const dup = ROWS.filter(r => r.status === "dup").length;
+  const err = ROWS.filter(r => r.status === "err").length;
+  $("#summary").innerHTML = `<span>총<b>${total}</b></span> <span>성공<b style="color:var(--grn)">${ok}</b></span> <span>중복<b style="color:var(--yel)">${dup}</b></span> <span>실패<b style="color:var(--red)">${err}</b></span>`;
+  $("#retryFailedBtn").disabled = err === 0;
+}
+
+$("#parseBtn").addEventListener("click", () => {
+  const parsed = parseInput($("#dataInput").value);
+  if (!parsed.length) { alert("파싱된 행이 없습니다. 헤더 + 회사명 컬럼을 확인해주세요."); return; }
+  const rows = parsed.map(raw => ({ raw, status: "pending", orgId: null, message: "" }));
+  renderRows(rows);
+  $("#pushBtn").disabled = false;
+  $("#bar").style.width = "0%";
+});
+
+async function pushRow(row, token) {
+  const { orgBody } = buildPayload(row.raw);
+  try {
+    const res = await salesmapFetch("/v2/organization", "POST", orgBody, token);
+    row.orgId = entityId(res);
+    row.status = "ok";
+    row.message = `등록 완료${row.orgId ? ` (ID:${row.orgId})` : ""}`;
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("409") || msg.toLowerCase().includes("duplicate") || msg.includes("이미")) {
+      const existing = await findOrg(row.raw.회사명, token);
+      if (existing) {
+        row.orgId = existing.id;
+        try {
+          await salesmapFetch(`/v2/organization/${existing.id}`, "POST", orgBody, token);
+          row.status = "dup"; row.message = `중복 — 기존 ID로 업데이트 (${existing.id})`;
+        } catch (e2) {
+          row.status = "dup"; row.message = `중복 — 업데이트 실패: ${e2.message}`;
+        }
+      } else {
+        row.status = "dup"; row.message = "중복으로 표시됐으나 기존 회사 검색 실패";
+      }
+    } else {
+      row.status = "err"; row.message = msg;
+    }
+  }
+}
+
+async function runPush(targets) {
+  const token = $("#token").value.trim();
+  if (!token) { alert("SalesMap Token이 필요합니다."); return; }
+  $("#pushBtn").disabled = true; $("#retryFailedBtn").disabled = true; $("#parseBtn").disabled = true;
+  const total = targets.length;
+  let done = 0;
+  for (const row of targets) {
+    await pushRow(row, token);
+    done++;
+    $("#bar").style.width = `${Math.round((done / total) * 100)}%`;
+    renderRows(ROWS);
+  }
+  $("#pushBtn").disabled = false; $("#parseBtn").disabled = false;
+}
+
+$("#pushBtn").addEventListener("click", () => {
+  const pending = ROWS.filter(r => r.status === "pending" || r.status === "err");
+  if (!pending.length) { alert("푸시할 행이 없습니다."); return; }
+  runPush(pending);
+});
+$("#retryFailedBtn").addEventListener("click", () => {
+  const failed = ROWS.filter(r => r.status === "err");
+  if (!failed.length) return;
+  failed.forEach(r => { r.status = "pending"; r.message = ""; });
+  renderRows(ROWS);
+  runPush(failed);
+});
+</script>
+</body>
+</html>

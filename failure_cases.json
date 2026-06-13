@@ -1,0 +1,99 @@
+{
+  "_comment": "OCR Pro 회귀테스트 실패 케이스 기록 — v9.36 + v9.60 expo_email + v9.63 ladder 트랙 통합",
+  "_generated": "2026-04-27",
+  "_updated": "2026-06-13",
+  "cases": [
+    {
+      "id": "FC-EXPO-EMAIL-004",
+      "version": "v9.60→v9.63 (해결됨)",
+      "desc": "이메일 fixture E01~E15 브라우저 실행 시 8건 FAIL (E01·E02·E04·E05·E06·E07·E08·E12)",
+      "root_cause": "계획서 §5 내부 모순 — 점수표상 단일 공식출처 최대 ~65점인데 등급표는 확정=80 요구. '공식출처+도메인일치' 정상 이메일도 후보(65)로 강등. 지난 세션 node 문법검사만 하고 브라우저 미검증한 채 완료 보고한 것이 원인",
+      "fix": "v9.63 — 도메인 일치 보너스 +20→+40 (회사 웹 도메인=이메일 도메인은 officialness 결정적 증거), OCR +8→+12. 등급 임계(80/60/1)는 유지. 브라우저 재검증 15/15 PASS"
+    },
+    {
+      "id": "FC-EXPO-SITE-001",
+      "version": "v9.63 (해결됨)",
+      "desc": "사다리 fixture S05 — DOM 마이닝이 <a>홈페이지</a> 링크텍스트를 회사명으로 오인",
+      "root_cause": "mineRepeatingCompanyBlocks 이름 우선순위가 anchor>heading 순이라, 링크라벨이 회사명을 가림",
+      "fix": "v9.63 — pickMinedCompanyName: heading 우선 + EXPO_GENERIC_LINK_RE(홈페이지/자세히 등) 배제. S05 통과"
+    },
+    {
+      "id": "FC-EXPO-SITE-002",
+      "version": "v9.63 (해결됨)",
+      "desc": "사다리 fixture S02 — inline JSON(window.__DATA__) 미검출",
+      "root_cause": "비탐욕 정규식이 멀티라인 JSON 배열 내부 첫 '}'에서 잘림 + 트레일링 __ / __NEXT_DATA__ 패턴 미커버",
+      "fix": "v9.63 — sliceBalancedLiteral(괄호 균형) 방식 + __NEXT_DATA__/__NUXT__ 및 trailing \\w* 패턴 추가. S02 통과"
+    },
+    {
+      "id": "FC-EXPO-EMAIL-001",
+      "version": "pre-v9.60",
+      "desc": "회원여부 외 — 전시회 이메일 추적 후 자동 전송된 후보 이메일이 SalesMap People 이메일로 노출됨",
+      "root_cause": "applyExpoEmailResult 가 80↑/else 후보 2단계만 운영해 60 미만 점수도 '후보' 라벨로 묶임. SalesMap 전송 로직이 후보 이메일을 자동으로 흘리는 위험 가능성",
+      "fix": "v9.60 — 1~59 점은 '낮음' 등급으로 분리, _emailReviewRequired 플래그 도입. People 이메일 전송 흐름이 확정(≥80)만 자동, 후보/낮음/문의폼은 보류로 명시 분기"
+    },
+    {
+      "id": "FC-EXPO-EMAIL-002",
+      "version": "pre-v9.60",
+      "desc": "KIMES exhiCodiEmail 이 회사 도메인과 무관한 전시 코디네이터 이메일임에도 일반 이메일과 같은 점수로 평가됨",
+      "root_cause": "normalizeAPICompanies 가 basicInfo 중첩 구조를 읽지 않아 exhiCodiEmail 이 회사 _apiEmail 메타에 들어가지 못함. 결과적으로 score 가산도 부적절",
+      "fix": "v9.60 — basicInfo.exhiCodiEmail 을 _apiEmail 로 분리 저장 + huntEmailForCompany 에서 sourceType=exhibition_detail_api(+40) 로 후보 투입, 도메인 불일치 시 -20 점수 + _emailReviewRequired=true"
+    },
+    {
+      "id": "FC-EXPO-EMAIL-003",
+      "version": "pre-v9.60",
+      "desc": "외부 플랫폼(wixsite, cafe24, modoo.at 등) 도메인 이메일이 정식 회사 이메일로 평가됨",
+      "root_cause": "scoreExpoEmailCandidate 의 free-domain 룰만 있고 외부 플랫폼 룰이 없음",
+      "fix": "v9.60 — EXPO_EMAIL_EXTERNAL_PLATFORMS 룰 신규(-25). 외부 플랫폼 도메인은 자동 확정에서 사실상 배제"
+    },
+
+    {
+      "id": "FC-001",
+      "version": "pre-v9.36",
+      "desc": "r.전화번호 필드 존재하지 않음 — emptyRec 스키마에는 전화/휴대폰만 있음",
+      "root_cause": "계획서 완료 기준이 r.전화번호를 기준값으로 사용 → 항상 undefined",
+      "fix": "r.휴대폰 기준으로 변경, normalizePhone(r.휴대폰) = '01020438373'"
+    },
+    {
+      "id": "FC-002",
+      "version": "pre-v9.36",
+      "desc": "URL afterPushRecord checked=false — emptyRec는 항상 checked:true 생성",
+      "root_cause": "계획서 기대값이 checked=false로 잘못 기재됨",
+      "fix": "URL fixture 기대값을 checked=true로 수정"
+    },
+    {
+      "id": "FC-003",
+      "version": "pre-v9.36",
+      "desc": "Vision parseBusinessCard 폴백 경로 parsed.대표자 미이관",
+      "root_cause": "라인 4766 근처 r.대표자 할당 누락",
+      "fix": "r.대표자=parsed.대표자||'' 추가 + normalizePersonRouting(r) 호출"
+    },
+    {
+      "id": "FC-004",
+      "version": "pre-v9.36",
+      "desc": "Tesseract 경로 parsed.대표자 미이관",
+      "root_cause": "라인 4801 근처 r.대표자 할당 누락",
+      "fix": "r.대표자=parsed.대표자||'' 추가 + normalizePersonRouting(r) 호출"
+    },
+    {
+      "id": "FC-005",
+      "version": "pre-v9.36",
+      "desc": "clearAll() 기존 동적 주입 규칙을 파서에서 제거하지 않음",
+      "root_cause": "SKIP_LABEL_SET·NON_NAME_KO에 주입된 규칙이 clearAll 후에도 잔류",
+      "fix": "dynamicSkipSet/dynamicNonNameSet 추적 후 clearAll에서 파서 Set 정리"
+    },
+    {
+      "id": "FC-006",
+      "version": "pre-v9.36",
+      "desc": "deleteRule이 정적 기본 규칙도 삭제 가능",
+      "root_cause": "동적/정적 구분 없이 SKIP_LABEL_SET.delete() 무조건 호출",
+      "fix": "dynamicSkipSet.has() 조건으로 동적 규칙만 삭제"
+    },
+    {
+      "id": "FC-007",
+      "version": "pre-v9.36",
+      "desc": "쉼표 포함 휴대폰 '010, 2043. 8373' 추출 실패",
+      "root_cause": "parseBusinessCard 정규식에 쉼표 구분자 미포함",
+      "fix": "[-.\\/s] → [,.\\-\\s] 패턴 확장 (3개 위치)"
+    }
+  ]
+}

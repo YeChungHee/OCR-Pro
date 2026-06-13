@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.62 — 회원여부 기본값 저장</title>
+<title>OCR Pro v9.63 — 전시회 적응형 추출 사다리</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.62</span>
+  <span class="ver">v9.63</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -7060,25 +7060,357 @@ ${truncated}`;
   return companies;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   🪜 전시회 적응형 추출 사다리 · 자가 업그레이드 엔진 (v9.63)
+   계획서: [claude]전시회_적응형추출사다리_자가업그레이드_고도화계획서_v1.0
+   기둥 ① ExtractionVerdict  기둥 ② ExpoSiteLadder  기둥 ③ ExpoSiteLearner
+   ※ 모든 로직은 전시회(registerCompanies 상류) 경로에만 연결 — 타 파이프라인 무영향
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 기둥 ①: 추출 성공/실패 자동 판정 (계획서 §5) ── */
+// 회사명에 섞이면 안 되는 비업체 토큰 (메뉴·슬로건·날짜·페이지네이션 등)
+const EXPO_GARBAGE_NAME_RE = /^(home|menu|로그인|login|회원가입|search|검색|more|자세히|다운로드|download|목록|list|이전|다음|prev|next|page|페이지|\d{4}[-./]\d{1,2}|^\d+$|all|전체|category|카테고리|booth|부스|contact|문의|sitemap|copyright|©|약관|개인정보)$/i;
+
+function isLikelyCompanyName(name) {
+  const s = String(name || '').trim();
+  if (s.length < 2 || s.length > 60) return false;
+  if (EXPO_GARBAGE_NAME_RE.test(s)) return false;
+  if (/^[\s\-_·•|/]+$/.test(s)) return false;
+  return true;
+}
+
+function computeExtractionVerdict(companies, ctx = {}) {
+  const list = Array.isArray(companies) ? companies : [];
+  const companyCount = list.length;
+  const names = list.map(c => String(c?.회사명 || '').trim());
+  const nonEmpty = names.filter(Boolean);
+  const coreFieldRate = companyCount ? nonEmpty.length / companyCount : 0;
+
+  const garbage = names.filter(n => n && !isLikelyCompanyName(n));
+  const garbageRate = companyCount ? garbage.length / companyCount : 0;
+
+  const seen = new Map();
+  nonEmpty.forEach(n => seen.set(n, (seen.get(n) || 0) + 1));
+  const dupExtra = [...seen.values()].reduce((s, v) => s + (v - 1), 0);
+  const duplicateRate = nonEmpty.length ? dupExtra / nonEmpty.length : 0;
+
+  const expectedCount = Number(ctx.expectedCount) || 0;
+  const coverage = expectedCount ? companyCount / expectedCount : null;
+
+  const reasons = [];
+  let verdict = 'ok';
+  if (companyCount < 1) { verdict = 'fail'; reasons.push('업체 0건'); }
+  else {
+    if (coreFieldRate < 0.9) { verdict = 'partial'; reasons.push(`회사명 확보율 ${(coreFieldRate*100).toFixed(0)}%`); }
+    if (garbageRate > 0.3)   { verdict = 'fail';    reasons.push(`비업체 토큰 ${(garbageRate*100).toFixed(0)}% — 셀렉터 오인식 의심`); }
+    if (duplicateRate > 0.4) { verdict = (verdict==='fail'?'fail':'partial'); reasons.push(`중복 ${(duplicateRate*100).toFixed(0)}% — 파서 오작동 의심`); }
+    if (coverage !== null && coverage < 0.7) { verdict = (verdict==='fail'?'fail':'partial'); reasons.push(`기대 대비 ${(coverage*100).toFixed(0)}% 수집`); }
+  }
+  return { verdict, companyCount, expectedCount, coreFieldRate, garbageRate, duplicateRate, coverage, reasons };
+}
+
+function formatExtractionVerdict(v) {
+  if (!v) return '';
+  const icon = v.verdict === 'ok' ? '🟢' : v.verdict === 'partial' ? '🟡' : '🔴';
+  const tail = v.reasons.length ? ` (${v.reasons.join(', ')})` : '';
+  return `${icon} 추출판정 ${v.verdict} · ${v.companyCount}건${tail}`;
+}
+
+/* 페이지가 노출한 총 업체 수 힌트 추출 (있으면 coverage 판정에 사용) */
+function detectExpectedCompanyCount(html) {
+  if (!html) return 0;
+  const pats = [
+    /(?:총|전체|Total)\s*[:：]?\s*([\d,]{1,7})\s*(?:개|건|社|companies|exhibitors|업체)/i,
+    /([\d,]{2,7})\s*(?:개|건)\s*(?:업체|참가|전시)/,
+  ];
+  for (const p of pats) {
+    const m = html.match(p);
+    if (m) { const n = parseInt(m[1].replace(/,/g, '')); if (n > 0 && n < 1000000) return n; }
+  }
+  return 0;
+}
+
+/* ── 기둥 ③: 학습 프리셋 영속화 (계획서 §7) ── */
+const ExpoSiteLearner = (() => {
+  const KEY = 'ocrpro.learn.expoSite.v1';
+  function _all() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (_) { return {}; }
+  }
+  function _host(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+  }
+  return {
+    get(url) { const h = _host(url); return h ? (_all()[h] || null) : null; },
+    save(url, config, verdict) {
+      const h = _host(url); if (!h || !config) return;
+      const all = _all();
+      const prev = all[h] || {};
+      all[h] = {
+        ...config,
+        verifiedAt: (ctxToday()),
+        successCount: (prev.successCount || 0) + 1,
+        lastVerdict: verdict ? { verdict: verdict.verdict, companyCount: verdict.companyCount } : null
+      };
+      try { localStorage.setItem(KEY, JSON.stringify(all)); } catch (_) {}
+      console.log(`[ExpoSiteLearner] 학습 저장: ${h} (strategy=${config.strategy}, successCount=${all[h].successCount})`);
+    },
+    invalidate(url, reason) {
+      const h = _host(url); if (!h) return;
+      const all = _all();
+      if (all[h]) { delete all[h]; try { localStorage.setItem(KEY, JSON.stringify(all)); } catch (_) {}
+        console.warn(`[ExpoSiteLearner] 학습 폐기: ${h} — ${reason || ''}`); }
+    },
+    dump() { return _all(); }
+  };
+  function ctxToday() {
+    try { return new Date().toISOString().slice(0, 10); } catch (_) { return ''; }
+  }
+})();
+
+/* ── 기둥 ②-칸3: DOM 패턴 마이닝 — 반복 카드/행 구조 자동 인식 (계획서 §6.2) ── */
+function mineRepeatingCompanyBlocks(html, baseUrl) {
+  if (!html) return { companies: [], strategyConfig: null };
+  let doc;
+  try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (_) { return { companies: [], strategyConfig: null }; }
+
+  // 1) 형제 군집 후보 수집: 같은 태그+클래스 시그니처를 가진 형제가 N개 이상인 부모
+  const MIN_SIBLINGS = 8;
+  const containers = new Map(); // parent -> {sig, children:[]}
+  doc.querySelectorAll('*').forEach(parent => {
+    const kids = Array.from(parent.children || []);
+    if (kids.length < MIN_SIBLINGS) return;
+    const sigCount = {};
+    kids.forEach(k => { const sig = k.tagName + '.' + (k.className || '').toString().trim().split(/\s+/)[0]; sigCount[sig] = (sigCount[sig] || 0) + 1; });
+    const top = Object.entries(sigCount).sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] >= MIN_SIBLINGS) {
+      const matched = kids.filter(k => (k.tagName + '.' + (k.className || '').toString().trim().split(/\s+/)[0]) === top[0]);
+      containers.set(parent, { sig: top[0], children: matched });
+    }
+  });
+
+  // 2) 각 후보에서 회사명/링크/로고 추출 후 verdict 점수화
+  let best = null;
+  containers.forEach((info, parent) => {
+    const companies = info.children.map(node => {
+      // 회사명 후보: heading 우선 → 일반 링크라벨이 아닌 앵커 → 노드 직접 텍스트
+      // (앵커가 "홈페이지/자세히" 같은 링크 라벨이면 heading의 실제 회사명을 놓치지 않도록 demote)
+      let name = pickMinedCompanyName(node);
+      if (name.length > 60) name = name.slice(0, 60).trim();
+      const anchor = node.querySelector('a');
+      const href = anchor?.getAttribute('href') || '';
+      let web = '';
+      if (href && !/^javascript:|^#|^mailto:/i.test(href)) {
+        try { web = new URL(href, baseUrl).href; } catch (_) {}
+      }
+      const img = node.querySelector('img');
+      const logo = img?.getAttribute('src') || '';
+      return { 회사명: name, 웹주소: /^https?:/i.test(web) && !sameHostAsList(web, baseUrl) ? web : '', _logo: logo, _detailUrl: (web && sameHostAsList(web, baseUrl)) ? web : null };
+    }).filter(c => isLikelyCompanyName(c.회사명));
+    const verdict = computeExtractionVerdict(companies);
+    const score = (verdict.verdict === 'ok' ? 100 : verdict.verdict === 'partial' ? 50 : 0) + companies.length;
+    if (companies.length >= MIN_SIBLINGS && (!best || score > best.score)) {
+      best = { companies, score, verdict, sig: info.sig };
+    }
+  });
+
+  if (!best) return { companies: [], strategyConfig: null };
+  return {
+    companies: best.companies,
+    strategyConfig: { strategy: 'dom_mining', listSelector: best.sig, source: 'discovery' },
+    verdict: best.verdict
+  };
+}
+
+function sameHostAsList(u, baseUrl) {
+  try { return new URL(u).hostname.replace(/^www\./,'') === new URL(baseUrl).hostname.replace(/^www\./,''); }
+  catch (_) { return false; }
+}
+
+/* 여는 괄호 위치부터 균형 잡힌 JSON 리터럴을 잘라낸다 (문자열·이스케이프 인지) */
+function sliceBalancedLiteral(str, start) {
+  const open = str[start];
+  const close = open === '{' ? '}' : open === '[' ? ']' : '';
+  if (!close) return '';
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < str.length; i++) {
+    const ch = str[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) { depth--; if (depth === 0) return str.slice(start, i + 1); }
+  }
+  return '';
+}
+
+// 일반 링크 라벨(회사명이 아님) — DOM 마이닝 시 이름 후보에서 배제
+const EXPO_GENERIC_LINK_RE = /^(홈페이지|homepage|home|more|자세히|상세|detail|view|보기|바로가기|link|website|사이트|웹사이트|go|선택|이동|click|here)$/i;
+function pickMinedCompanyName(node) {
+  const heading = node.querySelector('h1,h2,h3,h4,h5,strong,b');
+  if (heading) { const t = heading.textContent.replace(/\s+/g, ' ').trim(); if (isLikelyCompanyName(t)) return t; }
+  const anchor = node.querySelector('a');
+  if (anchor) { const t = anchor.textContent.replace(/\s+/g, ' ').trim(); if (t && !EXPO_GENERIC_LINK_RE.test(t) && isLikelyCompanyName(t)) return t; }
+  return (node.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+/* ── 기둥 ②-칸4: AI 셀렉터 추론 (Gemini) — 미지의 정적 사이트 (계획서 §6.3) ── */
+function compressHtmlSkeleton(html, maxLen = 24000) {
+  if (!html) return '';
+  // 텍스트는 대표 일부만 남기고 태그 구조 위주로 압축
+  let s = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (s.length > maxLen) s = s.slice(0, maxLen);
+  return s;
+}
+
+async function aiInferExtractionConfig(html, baseUrl, feedback = '') {
+  if (!getGeminiKey()) return { companies: [], strategyConfig: null };
+  const skeleton = compressHtmlSkeleton(html);
+  const prompt = `다음은 전시회 참가업체 목록 웹페이지의 HTML이다. 참가업체(회사) 목록의 반복 단위와 각 필드 위치를 분석해 JSON만 출력하라.
+${feedback ? '이전 시도 실패 사유: ' + feedback + '\n' : ''}
+출력 형식(JSON only, 코드펜스 금지):
+{"listSelector":"반복단위 CSS 셀렉터","nameSelector":"회사명 셀렉터(단위 내부 상대)","linkSelector":"홈페이지/상세 링크 셀렉터 or null","apiHint":"AJAX로 목록을 불러온다면 추정 API URL 패턴 or null"}
+
+HTML:
+${skeleton}`;
+  let raw;
+  try { raw = await callGeminiRaw(prompt); } catch (e) { console.warn('[AI셀렉터] 호출 실패', e.message); return { companies: [], strategyConfig: null }; }
+  let cfg;
+  try {
+    const m = raw.match(/\{[\s\S]*\}/);
+    cfg = JSON.parse(m ? m[0] : raw);
+  } catch (_) { return { companies: [], strategyConfig: null }; }
+  if (!cfg.listSelector) return { companies: [], strategyConfig: null, apiHint: cfg.apiHint || '' };
+
+  // 받은 셀렉터로 실제 추출
+  const companies = applyInferredSelectors(html, baseUrl, cfg);
+  return {
+    companies,
+    strategyConfig: { strategy: 'ai_selector', listSelector: cfg.listSelector, nameSelector: cfg.nameSelector || '', linkSelector: cfg.linkSelector || '', source: 'ai' },
+    verdict: computeExtractionVerdict(companies),
+    apiHint: cfg.apiHint || ''
+  };
+}
+
+function applyInferredSelectors(html, baseUrl, cfg) {
+  let doc;
+  try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (_) { return []; }
+  let units = [];
+  try { units = Array.from(doc.querySelectorAll(cfg.listSelector)); } catch (_) { return []; }
+  return units.map(node => {
+    let name = '';
+    if (cfg.nameSelector) { try { name = (node.querySelector(cfg.nameSelector)?.textContent || '').trim(); } catch (_) {} }
+    if (!name) name = (node.querySelector('a,h1,h2,h3,h4,strong')?.textContent || node.textContent || '').replace(/\s+/g,' ').trim();
+    if (name.length > 60) name = name.slice(0, 60).trim();
+    let web = '';
+    let linkEl = null;
+    if (cfg.linkSelector) { try { linkEl = node.querySelector(cfg.linkSelector); } catch (_) {} }
+    linkEl = linkEl || node.querySelector('a');
+    const href = linkEl?.getAttribute('href') || '';
+    if (href && !/^javascript:|^#|^mailto:/i.test(href)) { try { web = new URL(href, baseUrl).href; } catch (_) {} }
+    return { 회사명: name, 웹주소: (web && !sameHostAsList(web, baseUrl)) ? web : '', _detailUrl: (web && sameHostAsList(web, baseUrl)) ? web : null };
+  }).filter(c => isLikelyCompanyName(c.회사명));
+}
+
+/* ── 기둥 ②: 사다리 오케스트레이터 (계획서 §6) ──
+   정적 HTML 분기에서 칸0(학습)→칸3(DOM마이닝)→칸4(AI)를 순차 시도.
+   칸1(프리셋)·칸2(API)는 기존 fetchAllExhibitors 흐름이 담당하므로,
+   이 함수는 "기존 흐름이 모두 실패했을 때"의 격상 폴백으로 호출된다. */
+async function runExpoLadderFallback(url, html, ctx = {}) {
+  const expectedCount = detectExpectedCompanyCount(html);
+
+  // 칸 0: 학습 프리셋
+  const learned = ExpoSiteLearner.get(url);
+  if (learned && (learned.strategy === 'dom_mining' || learned.strategy === 'ai_selector') && learned.listSelector) {
+    const companies = applyInferredSelectors(html, url, { listSelector: learned.listSelector, nameSelector: learned.nameSelector, linkSelector: learned.linkSelector });
+    const v = computeExtractionVerdict(companies, { expectedCount });
+    if (v.verdict === 'ok') { console.log('[사다리] 칸0 학습 프리셋 적중'); return { companies, verdict: v, rung: 0 }; }
+    ExpoSiteLearner.invalidate(url, '학습 프리셋 재검증 실패(사이트 개편 의심)');
+  }
+
+  // 칸 3: DOM 패턴 마이닝
+  updateExpoProgress('🧩 DOM 패턴 마이닝 중...', 0, 0);
+  const mined = mineRepeatingCompanyBlocks(html, url);
+  let minedV = mined.companies.length ? computeExtractionVerdict(mined.companies, { expectedCount }) : { verdict: 'fail', reasons: ['마이닝 0건'] };
+  if (minedV.verdict === 'ok') {
+    ExpoSiteLearner.save(url, mined.strategyConfig, minedV);
+    console.log('[사다리] 칸3 DOM 마이닝 성공');
+    return { companies: mined.companies, verdict: minedV, rung: 3 };
+  }
+
+  // 칸 4: AI 셀렉터 추론 (자기수정 루프 최대 2회)
+  if (getGeminiKey()) {
+    let feedback = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      updateExpoProgress(`🤖 AI 구조 추론 중... (${attempt + 1}/2)`, 0, 0);
+      const ai = await aiInferExtractionConfig(html, url, feedback);
+      const aiV = ai.companies.length ? computeExtractionVerdict(ai.companies, { expectedCount }) : { verdict: 'fail', reasons: ['AI 추출 0건'] };
+      if (aiV.verdict === 'ok') {
+        ExpoSiteLearner.save(url, ai.strategyConfig, aiV);
+        console.log('[사다리] 칸4 AI 셀렉터 성공');
+        return { companies: ai.companies, verdict: aiV, rung: 4, apiHint: ai.apiHint };
+      }
+      feedback = aiV.reasons.join(', ');
+    }
+  }
+
+  // 더 나은 부분결과라도 반환 (없으면 빈 결과 → 호출부가 칸5 안내)
+  if (mined.companies.length) return { companies: mined.companies, verdict: minedV, rung: 3 };
+  return { companies: [], verdict: { verdict: 'fail', companyCount: 0, reasons: ['모든 칸 실패 — 수동 캡처 필요'] }, rung: 5 };
+}
+
+/* ── 기둥 ②-칸5: 수동 캡처 (반자동 폴백, 계획서 §6.4) ──
+   세션·CSRF·봇차단으로 자동 칸이 모두 실패한 사이트에서, 사용자가 DevTools Network에서
+   복사한 목록 XHR 응답(JSON 또는 회사 배열)을 붙여넣으면 정규화→등록하고 API 패턴을 학습한다.
+   콘솔/DevTools에서: expoManualCapture(붙여넣은JSON문자열, 목록URL, {apiUrl, includeDetail}) */
+async function expoManualCapture(pastedText, listUrl = '', opts = {}) {
+  let parsed;
+  try { parsed = typeof pastedText === 'string' ? JSON.parse(pastedText) : pastedText; }
+  catch (e) { toast('붙여넣은 데이터가 JSON이 아닙니다. Network 응답 원문(JSON)을 그대로 붙여넣어 주세요.', 'error'); return; }
+  const arr = Array.isArray(parsed) ? parsed
+    : (parsed.data || parsed.list || parsed.items || parsed.result || parsed.contents || parsed.exhibitors || parsed.companies || []);
+  if (!Array.isArray(arr) || !arr.length) { toast('응답에서 업체 배열을 찾지 못했습니다.', 'error'); return; }
+  const companies = normalizeAPICompanies(arr);
+  const verdict = computeExtractionVerdict(companies);
+  if (verdict.verdict === 'fail') { toast(`수동 캡처 판정 실패 — ${verdict.reasons.join(', ')}`, 'error'); return; }
+  if (listUrl && opts.apiUrl) ExpoSiteLearner.save(listUrl, { strategy: 'manual_api', apiUrl: opts.apiUrl, source: 'manual' }, verdict);
+  const total = await registerCompanies(companies, opts.includeDetail !== false, Math.max(100, parseInt($('#expoDelay')?.value) || 400));
+  updateExpoProgress(buildExpoCompletionText(total), total, total);
+  toast(`🪜 수동 캡처 등록 완료: ${total}개 · ${formatExtractionVerdict(verdict)} · ${formatExpoEmailStats(lastExpoEmailStats)}`, 'success');
+  return { total, verdict };
+}
+if (typeof window !== 'undefined') window.expoManualCapture = expoManualCapture;
+
 /* ── 동적 페이지용 JSON API 자동 탐색 (KIMES 등 SPA) ── */
 async function tryDiscoverExhibitorAPI(url, html) {
   // 1) 페이지 내 inline JSON 데이터 탐색
-  const inlinePatterns = [
-    /window\.__(?:DATA|INIT_STATE|STATE|STORE|initialData|pageData|exhibitors?)\s*=\s*(\{[\s\S]{50,}?\});?\s*\n/,
-    /var\s+(?:exhibitors?|companies|listData)\s*=\s*(\[[\s\S]{50,}?\]);?\s*\n/,
+  // ★ v9.63: 비탐욕 정규식은 멀티라인 JSON에서 배열 내부 첫 '}'에 잘리므로,
+  //    할당 시작점을 찾은 뒤 괄호 균형(brace-balance)으로 완전한 리터럴을 잘라낸다.
+  const assignPatterns = [
+    /window\.__(?:DATA|INIT_STATE|STATE|STORE|NEXT_DATA|NUXT|initialData|pageData|exhibitors?)\w*\s*=\s*([{[])/,
+    /var\s+(?:exhibitors?|companies|listData)\s*=\s*([{[])/,
   ];
-  for (const pat of inlinePatterns) {
-    const m = html.match(pat);
-    if (m) {
-      try {
-        const parsed = JSON.parse(m[1]);
-        const arr = Array.isArray(parsed) ? parsed : (parsed.data || parsed.list || parsed.items);
-        if (Array.isArray(arr) && arr.length > 0) {
-          console.log('[인라인 JSON 발견]', arr.length, '개');
-          return { type: 'json', data: arr };
-        }
-      } catch(e) {}
-    }
+  for (const pat of assignPatterns) {
+    const m = pat.exec(html);
+    if (!m) continue;
+    const start = m.index + m[0].length - 1;  // 여는 괄호 위치
+    const literal = sliceBalancedLiteral(html, start);
+    if (!literal) continue;
+    try {
+      const parsed = JSON.parse(literal);
+      const arr = Array.isArray(parsed) ? parsed : (parsed.data || parsed.list || parsed.items || parsed.exhibitors || parsed.companies);
+      if (Array.isArray(arr) && arr.length > 0) {
+        console.log('[인라인 JSON 발견]', arr.length, '개 (brace-balanced)');
+        return { type: 'json', data: arr };
+      }
+    } catch(e) {}
   }
 
   // 2) 공통 JSON API 패턴 탐색
@@ -7116,25 +7448,46 @@ async function tryDiscoverExhibitorAPI(url, html) {
   return null;
 }
 
-/* ── JSON API 결과 → companies 배열 정규화 ── */
+/* ── JSON API 결과 → companies 배열 정규화 ──
+   ★ v9.60: 계획서 §7.4 KIMES — basicInfo.exhiCodiEmail / onlineInfo.homepage 중첩 구조 대응
+   API 원천 이메일은 _apiEmail 메타로 분리 저장해 huntEmailForCompany 에서
+   sourceType=exhibition_detail_api(+40) 로 평가받도록 한다. */
 function normalizeAPICompanies(arr) {
   return arr.map(item => {
-    // 다양한 필드명 매핑
+    const basic    = item.basicInfo  || item.basic  || {};
+    const online   = item.onlineInfo || item.online || {};
+    const onlineInner = online.onlineInfo || online.info || online;
+    const itemList = item.onlineDisplayItemList || online.displayItemList || online.itemList || [];
+
     const name = item.companyName || item.company_name || item.company || item.name
       || item.exhibitorName || item.exhibitor_name || item.corpName || item.firmName
+      || basic.companyName || basic.exhibitorName || basic.corpName
       || item.회사명 || item.업체명 || '';
     if (!name) return null;
+
+    const homepage = item.homepage || item.website || item.url || item.웹주소
+      || onlineInner.homepage || onlineInner.website || onlineInner.url
+      || basic.homepage || basic.website || '';
+
+    const directEmail = item.email || item.이메일 || basic.email || onlineInner.email || '';
+    const apiEmail    = basic.exhiCodiEmail || basic.exhibitorEmail || basic.contactEmail || '';
+    const displayItems = Array.isArray(itemList)
+      ? itemList.map(x => (x?.itemName || x?.name || x?.title || '').trim()).filter(Boolean).join(', ')
+      : '';
+
     return {
       회사명:    name,
-      부스번호:  item.boothNo || item.booth_no || item.booth || item.boothNumber || item.부스번호 || '',
-      전시품:    item.product || item.products || item.category || item.전시품 || item.품목 || '',
-      웹주소:    item.homepage || item.website || item.url || item.웹주소 || '',
-      담당자:    item.contactName || item.contact_name || item.manager || item.담당자 || '',
-      전화:      item.tel || item.phone || item.telephone || item.전화 || '',
-      이메일:    item.email || item.이메일 || '',
-      주소:      item.address || item.주소 || '',
-      대표자:    item.ceo || item.representative || item.대표자 || '',
+      부스번호:  item.boothNo || item.booth_no || item.booth || item.boothNumber || basic.boothNo || item.부스번호 || '',
+      전시품:    item.product || item.products || item.category || item.전시품 || item.품목 || displayItems || '',
+      웹주소:    homepage,
+      담당자:    item.contactName || item.contact_name || item.manager || basic.codiName || basic.exhiCodiName || item.담당자 || '',
+      전화:      item.tel || item.phone || item.telephone || basic.tel || basic.exhiCodiTel || item.전화 || '',
+      이메일:    directEmail,  // 직접 이메일 필드는 그대로
+      _apiEmail: apiEmail,     // ★ exhiCodiEmail 등 전시 코디네이터 이메일은 별도 메타로 분리 (검수 대상)
+      주소:      item.address || item.주소 || basic.address || '',
+      대표자:    item.ceo || item.representative || basic.ceo || basic.representative || item.대표자 || '',
       _detailUrl: null,
+      _apiSource: 'exhibition_detail_api',
     };
   }).filter(Boolean);
 }
@@ -7708,28 +8061,53 @@ function extractEmailCandidatesFromHtml(html, sourceType, sourceUrl) {
   return candidates;
 }
 
+/* ★ v9.60: 계획서 [codex]전시회_이메일중심_추출고도화_추가계획서_v1.0 §5 점수표 정합화
+   - source별 가산점을 API/페이지/mailto/visible/PDF/OCR로 분리
+   - 외부 플랫폼 도메인(-25), PDF(+15), OCR(+8) 신규 추가
+   - 무료메일·도메인 일치/불일치·위험 계정 룰 유지 */
+const EXPO_EMAIL_FREE_DOMAINS = /^(gmail|naver|daum|hanmail|yahoo|hotmail|outlook|icloud|kakao|nate|paran)\./i;
+const EXPO_EMAIL_EXTERNAL_PLATFORMS = /^(wixsite|blogspot|cafe24|modoo\.at|imweb\.me|cyworld|tistory|github\.io|notion\.site|carrd\.co|business\.site|godohosting|mycafe24)\./i;
+const EXPO_EMAIL_GENERIC_LOCALS = /^(sales|info|contact|cs|support|hello|inquiry|export|global|office|help|service|mail|biz|business|customer)$/i;
+const EXPO_EMAIL_RISKY_LOCALS = /^(no-?reply|donotreply|privacy|webmaster|admin|recruit|career|newsletter|abuse|spam|postmaster)$/i;
+
 function scoreExpoEmailCandidate(candidate, rec) {
   if (!candidate?.email) return 0;
   const email = candidate.email.toLowerCase();
   const [local, domain] = email.split('@');
   if (!local || !domain) return 0;
 
-  let score = 10;
+  let score = 0;
   const source = candidate.sourceType || '';
-  if (/exhibition_detail/.test(source)) score += 70;
-  if (/homepage_mailto|mailto/.test(source)) score += 55;
-  if (/homepage_contact|homepage_support|homepage_inquiry/.test(source)) score += 50;
-  if (/homepage_main/.test(source)) score += 35;
-  if (/initial_record/.test(source)) score += 70;
 
-  const siteDomain = getEmailRootDomain(rec.웹주소);
+  // 1차/2차: 전시회 공식 원천
+  if (/exhibition_detail_api/.test(source)) score += 40;          // 상세 API
+  else if (/exhibition_detail/.test(source)) score += 35;         // 상세 페이지 (mailto/라벨 포함)
+  // 3차: 회사 공식 홈페이지
+  if (/homepage_mailto|:mailto/.test(source)) score += 35;        // mailto 링크
+  else if (/homepage_(contact|support|inquiry|customer|cs|company|about|intro)/.test(source)) score += 30;
+  else if (/homepage_main/.test(source)) score += 30;             // 메인 visible
+  // 4차: 첨부 PDF / 이미지 OCR
+  if (/(pdf|brochure|catalog)/i.test(source)) score += 15;
+  if (/(ocr|image_email)/i.test(source)) score += 12;   /* ★ v9.63: +8→+12 — 이미지에서 도메인 일치 이메일도 후보 진입 가능하도록 */
+  // 초기 레코드 (전시회 목록 페이지 이메일 컬럼) — 1차 원천 동급
+  if (/initial_record|list_row|exhibition_list/i.test(source)) score += 35;
+
+  // 도메인 일치 / 불일치
+  // ★ v9.63: 이메일 도메인 == 회사 공식 웹 도메인은 officialness 의 결정적 증거 → +20→+40.
+  //   공식 출처 + 도메인 일치 + 정상 계정이면 확정(80)에 도달하도록 정합화 (계획서 §5 등급 의도).
+  const siteDomain = getEmailRootDomain(rec?.웹주소);
   const mailDomain = getEmailRootDomain(domain);
-  const freeDomain = /^(gmail|naver|daum|hanmail|yahoo|hotmail|outlook|icloud)\./i.test(domain);
-  if (siteDomain && mailDomain && siteDomain === mailDomain) score += 20;
+  const freeDomain = EXPO_EMAIL_FREE_DOMAINS.test(domain);
+  const externalDomain = EXPO_EMAIL_EXTERNAL_PLATFORMS.test(domain);
+  if (siteDomain && mailDomain && siteDomain === mailDomain) score += 40;
   else if (siteDomain && mailDomain && !freeDomain) score -= 20;
-  if (/^(sales|info|contact|cs|support|hello|inquiry|export|global|office|help|service|mail)$/i.test(local)) score += 10;
-  if (/^(no-?reply|donotreply|privacy|webmaster|admin|recruit|career|newsletter|abuse)$/i.test(local)) score -= 40;
+
+  // 계정/도메인 룰
+  if (EXPO_EMAIL_GENERIC_LOCALS.test(local)) score += 10;
+  if (EXPO_EMAIL_RISKY_LOCALS.test(local)) score -= 40;
   if (freeDomain) score -= 15;
+  if (externalDomain) score -= 25;
+
   return Math.max(0, Math.min(100, score));
 }
 
@@ -7760,23 +8138,46 @@ function buildEmailHuntUrls(homepage) {
   }
 }
 
+/* ★ v9.60: 계획서 §5 등급 체계로 정합화
+   80↑ 확정 · 60~79 후보 · 1~59 낮음(내부 메타만) · 0 없음/문의폼
+   + 회사 웹 도메인과 이메일 도메인 일치 여부를 _emailDomainMatch 메타로 기록 */
 function applyExpoEmailResult(rec, result) {
-  if (!result) {
+  if (!result || !result.email) {
     rec._emailStatus = rec._contactFormUrl ? '문의폼' : '없음';
     rec._emailConfidence = 0;
+    rec._emailDomainMatch = '';
+    rec._emailReviewRequired = false;
     return;
   }
-  rec._emailConfidence = result.confidence || 0;
+  const conf = Number(result.confidence) || 0;
+  rec._emailConfidence = conf;
   rec._emailSourceType = result.sourceType || '';
   rec._emailSourceUrl = result.sourceUrl || '';
-  if (result.confidence >= 80) {
+
+  const siteDomain = getEmailRootDomain(rec?.웹주소);
+  const mailDomain = getEmailRootDomain((result.email.split('@')[1] || ''));
+  rec._emailDomainMatch = siteDomain && mailDomain
+    ? (siteDomain === mailDomain ? 'match' : 'mismatch')
+    : 'unknown';
+
+  if (conf >= 80) {
     rec.이메일 = result.email;
     rec._emailStatus = '확정';
     rec._emailCandidate = '';
-  } else {
+    rec._emailReviewRequired = rec._emailDomainMatch === 'mismatch';
+  } else if (conf >= 60) {
     rec._emailCandidate = result.email;
     rec._emailStatus = '후보';
+    rec._emailReviewRequired = true;
     if (!rec.이메일 || rec.이메일 === result.email) rec.이메일 = '';
+  } else if (conf >= 1) {
+    rec._emailCandidate = result.email;
+    rec._emailStatus = '낮음';
+    rec._emailReviewRequired = true;
+    if (!rec.이메일 || rec.이메일 === result.email) rec.이메일 = '';
+  } else {
+    rec._emailStatus = rec._contactFormUrl ? '문의폼' : '없음';
+    rec._emailReviewRequired = false;
   }
 }
 
@@ -7785,6 +8186,11 @@ async function huntEmailForCompany(rec, comp, opts = {}) {
   const add = list => candidates.push(...(list || []));
 
   if (rec.이메일) add([{ email: rec.이메일, sourceType: 'initial_record', sourceUrl: comp?._detailUrl || rec.웹주소 || '' }]);
+  /* ★ v9.60: KIMES 등 전시회 상세 API 가 내려준 이메일(예: basicInfo.exhiCodiEmail) 을 후보로 투입
+     도메인 불일치는 scoreExpoEmailCandidate 의 -20 룰과 applyExpoEmailResult 의 _emailReviewRequired 로 처리 */
+  if (comp?._apiEmail) {
+    add([{ email: String(comp._apiEmail).trim().toLowerCase(), sourceType: 'exhibition_detail_api', sourceUrl: comp?._detailUrl || rec.웹주소 || '' }]);
+  }
   add(extractEmailCandidatesFromHtml(opts.detailHtml, 'exhibition_detail', opts.detailUrl || comp?._detailUrl || ''));
 
   let best = pickBestExpoEmail(candidates, rec);
@@ -7811,9 +8217,27 @@ async function huntEmailForCompany(rec, comp, opts = {}) {
   return pickBestExpoEmail(candidates, rec);
 }
 
+/* ★ v9.60: 계획서 §9 검증 리포트 지표 — 이메일 확보율·도메인 일치율·접점 확보율 추가 */
 function formatExpoEmailStats(stats) {
   if (!stats) return '';
-  return `이메일 확정 ${stats.confirmed} / 후보 ${stats.candidate} / 문의폼 ${stats.form} / 없음 ${stats.none}`;
+  const total = (stats.confirmed || 0) + (stats.candidate || 0) + (stats.low || 0) + (stats.form || 0) + (stats.none || 0);
+  if (!total) return '';
+  const pct = n => `${((n / total) * 100).toFixed(1)}%`;
+  const confirmed = stats.confirmed || 0;
+  const candidate = stats.candidate || 0;
+  const low       = stats.low || 0;
+  const form      = stats.form || 0;
+  const none      = stats.none || 0;
+  const domainMatch = stats.domainMatch || 0;
+  const domainKnown = (stats.domainMatch || 0) + (stats.domainMismatch || 0);
+  const reachable = confirmed + candidate + form;             // 접점(이메일 확정·후보·문의폼)
+  const main = `이메일 확정 ${confirmed} / 후보 ${candidate} / 낮음 ${low} / 문의폼 ${form} / 없음 ${none}`;
+  const rates = [
+    `확보율 ${pct(confirmed)}`,
+    `접점 확보율 ${pct(reachable)}`,
+    domainKnown ? `도메인 일치율 ${((domainMatch / domainKnown) * 100).toFixed(1)}%(${domainMatch}/${domainKnown})` : ''
+  ].filter(Boolean).join(' · ');
+  return `${main} · ${rates}`;
 }
 
 function buildExpoCompletionText(totalAdded) {
@@ -7824,7 +8248,8 @@ function buildExpoCompletionText(totalAdded) {
 /* 공통 레코드 등록 헬퍼 */
 async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtmls = null) {
   let totalAdded = 0;
-  const emailStats = { confirmed: 0, candidate: 0, form: 0, none: 0 };
+  /* ★ v9.60: 계획서 §9 — 낮음/도메인 일치/불일치 카운터 확장 */
+  const emailStats = { confirmed: 0, candidate: 0, low: 0, form: 0, none: 0, domainMatch: 0, domainMismatch: 0, reviewRequired: 0 };
   for (let i = 0; i < allCompanies.length; i++) {
     if (expoAborted) break;
     const comp = allCompanies[i];
@@ -7907,9 +8332,13 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
     }
 
     if (rec._emailStatus === '확정') emailStats.confirmed++;
-    else if (rec._emailStatus === '문의폼') emailStats.form++;
     else if (rec._emailStatus === '후보') emailStats.candidate++;
+    else if (rec._emailStatus === '낮음') emailStats.low++;
+    else if (rec._emailStatus === '문의폼') emailStats.form++;
     else emailStats.none++;
+    if (rec._emailDomainMatch === 'match') emailStats.domainMatch++;
+    else if (rec._emailDomainMatch === 'mismatch') emailStats.domainMismatch++;
+    if (rec._emailReviewRequired) emailStats.reviewRequired++;
 
     pushRecord(rec);
     totalAdded++;
@@ -7989,10 +8418,16 @@ async function fetchAllExhibitors() {
       updateFormatBadge('api');
       toast(`⚡ JSON API 발견! ${apiResult.data.length}개 업체 직접 추출`, 'success');
       const companies = normalizeAPICompanies(apiResult.data);
-      totalAdded = await registerCompanies(companies, includeDetail, delayMs);
-      updateExpoProgress(buildExpoCompletionText(totalAdded), totalAdded, totalAdded);
-      toast(`🏛 ${totalAdded}개 참가업체 등록 완료! ${formatExpoEmailStats(lastExpoEmailStats)}`, 'success');
-      return;
+      const apiVerdict = computeExtractionVerdict(companies, { expectedCount: detectExpectedCompanyCount(firstHtml) });
+      if (apiVerdict.verdict !== 'fail') {
+        // 칸2 성공 → 학습 프리셋 저장 (기둥 ③)
+        ExpoSiteLearner.save(url, { strategy: 'json_api', apiUrl: apiResult.url || '', source: 'discovery' }, apiVerdict);
+        totalAdded = await registerCompanies(companies, includeDetail, delayMs);
+        updateExpoProgress(buildExpoCompletionText(totalAdded), totalAdded, totalAdded);
+        toast(`🏛 ${totalAdded}개 참가업체 등록 완료! ${formatExtractionVerdict(apiVerdict)} · ${formatExpoEmailStats(lastExpoEmailStats)}`, 'success');
+        return;
+      }
+      console.warn('[전시회] API 결과 판정 실패 — 사다리 격상', apiVerdict.reasons);
     }
 
     // ── BBS 구조 감지 — 페이지 파라미터를 'page'로 고정 ──
@@ -8047,23 +8482,30 @@ async function fetchAllExhibitors() {
       updateExpoProgress(`✅ 페이지 ${pg}/${maxPage} — 누적 ${allCompanies.length}개`, pg, maxPage);
     }
 
-    // ── 2-B: 테이블 파싱 실패 시 Gemini AI fallback ──
+    // ── 2-B: 테이블 파싱 실패 시 적응형 사다리 격상 (v9.63: 칸0 학습→칸3 DOM마이닝→칸4 AI) ──
     if (allCompanies.length === 0) {
-      if (!GCLOUD_API_KEY) {
-        throw new Error('업체 목록을 찾을 수 없습니다. URL이 참가업체 목록 페이지인지 확인하거나, Gemini API Key를 설정하면 AI로 재시도합니다.');
-      }
       updateFormatBadge('ai');
-      toast('⚡ 테이블 감지 실패 → Gemini AI로 재시도합니다...', 'info');
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(firstHtml, 'text/html');
-      const pageText = doc.body?.textContent || firstHtml;
-      const geminiCompanies = await extractCompaniesViaGemini(pageText, 'html');
-      if (geminiCompanies.length === 0) throw new Error('Gemini AI도 업체 목록을 찾을 수 없습니다. URL이 참가업체 목록 페이지인지 확인하세요.');
-      allCompanies.push(...geminiCompanies);
-      toast(`🤖 Gemini AI: ${geminiCompanies.length}개 업체 추출 완료`, 'success');
+      toast('⚡ 테이블 감지 실패 → 적응형 추출 사다리로 격상합니다...', 'info');
+      const ladder = await runExpoLadderFallback(url, firstHtml, {});
+      if (ladder.companies.length === 0) {
+        const tip = getGeminiKey() ? '모든 추출 전략이 실패했습니다. 동적 로딩(SPA/AJAX) 사이트라면 DevTools에서 목록 API를 캡처해 직접 등록해야 합니다.' : '업체 목록을 찾을 수 없습니다. Gemini API Key를 설정하면 AI 구조 추론까지 시도합니다.';
+        throw new Error(tip);
+      }
+      allCompanies.push(...ladder.companies);
+      const rungName = { 0: '학습 프리셋', 3: 'DOM 패턴 마이닝', 4: 'AI 구조 추론' }[ladder.rung] || `칸${ladder.rung}`;
+      toast(`🪜 사다리 ${rungName} 성공: ${ladder.companies.length}개 추출 · ${formatExtractionVerdict(ladder.verdict)}`, 'success');
     }
 
-    toast(`📋 ${allCompanies.length}개 업체 목록 수집 완료. ${includeDetail ? '상세정보 병렬 조회 중...' : '등록 중...'}`, 'success');
+    // ── 2-C: 수집 결과 추출 판정 (기둥 ① — 조용한 실패 차단) ──
+    const collectVerdict = computeExtractionVerdict(allCompanies, { expectedCount: detectExpectedCompanyCount(firstHtml) });
+    if (collectVerdict.verdict === 'fail') {
+      throw new Error(`추출 판정 실패 — ${collectVerdict.reasons.join(', ')}. 셀렉터 오인식 또는 동적 로딩 가능성.`);
+    }
+    if (collectVerdict.verdict === 'partial') {
+      toast(`⚠️ 부분 추출 — ${formatExtractionVerdict(collectVerdict)}`, 'info');
+    }
+
+    toast(`📋 ${allCompanies.length}개 업체 목록 수집 완료. ${formatExtractionVerdict(collectVerdict)} · ${includeDetail ? '상세정보 병렬 조회 중...' : '등록 중...'}`, 'success');
 
     // ── 3단계: BBS 시 상세 페이지 병렬 사전 조회 ──
     let detailHtmlCache = null;
@@ -8239,6 +8681,45 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.63",
+    date: "2026-06-13 20:00",
+    title: "전시회 적응형 추출 사다리 · 자가 업그레이드 엔진",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "추출 판정 엔진(ExtractionVerdict) — 0건·비업체토큰·중복 과다를 ok/partial/fail로 정량 판정해 '조용한 실패'(0건인데 완료) 차단" },
+      { type: "feat", text: "적응형 추출 사다리 — 학습프리셋→기존프리셋→API탐색→DOM패턴마이닝→AI셀렉터추론→수동캡처 단계적 폴백" },
+      { type: "feat", text: "DOM 패턴 마이닝 — 반복 카드/행 구조를 자동 인식해 손코딩 없이 정적 사이트(NextRise형) 추출" },
+      { type: "feat", text: "AI 셀렉터 추론(Gemini) — 미지 구조에서 반복단위·필드 셀렉터를 추론하고 verdict로 검증, 자기수정 2회" },
+      { type: "feat", text: "학습 프리셋 영속화(ExpoSiteLearner) — 통한 전략을 호스트별 저장, 재방문 시 즉시 재사용 + 사이트 개편 시 자가 폐기·재탐색" },
+      { type: "feat", text: "수동 캡처(expoManualCapture) — 세션/봇차단 사이트는 DevTools XHR 응답 붙여넣기로 등록 + API 패턴 학습" },
+      { type: "improve", text: "inline JSON 추출을 brace-balance 방식으로 교체 + __NEXT_DATA__/__NUXT__ 패턴 추가 — 멀티라인 JSON 잘림 해결" },
+      { type: "improve", text: "DOM 마이닝 회사명 추출이 heading 우선 + '홈페이지/자세히' 같은 일반 링크라벨을 배제하도록 보정" },
+      { type: "fix", text: "전시회 이메일 점수 보정 — 도메인 일치 +20→+40 (회사 웹 도메인=이메일 도메인은 확정 증거). 공식출처+도메인일치+정상계정이 확정(80)에 도달, fixture E01~E15 15/15 통과" }
+    ],
+    learnLog: [
+      { text: "사이트별 추출은 하드코딩 어댑터가 아니라 '실패 감지 → 전략 격상 → 통한 설정 학습'의 3기둥으로 자가 업그레이드할 수 있음. 코드 재작성이 아니라 셀렉터·전략 설정을 학습·영속화하는 형태" },
+      { text: "추출 성공/실패 자동 판정(ExtractionVerdict)이 자가 업그레이드의 트리거 — 정량 기준이 없으면 격상이 켜지지 않거나 오작동함" }
+    ]
+  },
+  {
+    version: "v9.60",
+    date: "2026-05-21 19:30",
+    title: "전시회 이메일 점수표 정합화 + fixture E01~E15",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "계획서 [codex]전시회_이메일중심_추출고도화_추가계획서_v1.0 §5 점수표를 scoreExpoEmailCandidate 로직과 정합화 — API +40, 상세페이지 +35, mailto +35, 홈페이지 visible/contact +30, PDF +15, OCR +8, 외부 플랫폼 도메인 -25 룰 신규" },
+      { type: "feat", text: "applyExpoEmailResult 에 '낮음(1~59)' 등급 신규 도입 — 60 미만 후보를 자동 전송에서 분리, _emailReviewRequired 검수 플래그 + _emailDomainMatch 메타 기록" },
+      { type: "feat", text: "formatExpoEmailStats 에 이메일 확보율 / 접점 확보율 / 회사 도메인 일치율 % 출력 추가 (계획서 §9 지표)" },
+      { type: "feat", text: "KIMES exhiCodiEmail 처리 — normalizeAPICompanies 가 basicInfo / onlineInfo 중첩 구조를 읽어 _apiEmail 메타로 분리, huntEmailForCompany 에서 exhibition_detail_api 후보로 투입해 도메인 불일치 시 자동 검수 표시" },
+      { type: "feat", text: "fixture E01~E15 (목록 컬럼/상세 라벨/mailto/contact 페이지/난독화/entity/이미지/PDF/privacy/recruit/문의폼/복수 이메일/도메인 불일치/KIMES API/이메일 없음) 신규 + verify-expo-email-fixtures.html 회귀 실행 도구" },
+      { type: "improve", text: "expected_output.json·fixture_output.json·failure_cases.json 에 expo_email 트랙 추가 — 회귀 결과 추적 자산 정비" }
+    ],
+    learnLog: [
+      { text: "전시회 이메일은 무조건 찾는 것이 아니라 공식 출처 기반 확정/후보/낮음/문의폼/없음 5단계로 분류해야 영업 자동전송 안전성이 확보됨" },
+      { text: "전시 코디네이터 이메일(KIMES exhiCodiEmail) 등 회사 도메인과 무관한 API 이메일은 도메인 일치 -20 룰 + _emailReviewRequired 플래그로 검수 분기 필요" }
+    ]
+  },
   {
     version: "v9.59",
     date: "2026-05-21 08:04",

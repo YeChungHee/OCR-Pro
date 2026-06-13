@@ -1,0 +1,94 @@
+{
+  "_comment": "OCR Pro 파이프라인 회귀테스트 기대값 — v9.36 기본 12 fixture + 2 learning + v9.60 전시회 이메일 15 fixture",
+  "_generated": "2026-04-27",
+  "_updated": "2026-05-21 (v9.60: expo_email 15 fixture 트랙 추가, runner=verify-expo-email-fixtures.html)",
+  "expo_email": {
+    "_runner": "verify-expo-email-fixtures.html",
+    "_cases": "fixtures/expo_email_cases/cases.json",
+    "_plan": "고도화플랜/[codex]전시회_이메일중심_추출고도화_추가계획서_v1.0.md §6",
+    "summary": "E01~E15 — 목록 이메일 컬럼·상세 페이지 라벨·mailto·홈페이지 contact·난독화·entity·이미지 OCR·PDF 브로슈어·privacy/recruit 단독·문의폼·복수 이메일·도메인 불일치·KIMES exhiCodiEmail·없음"
+  },
+  "pipeline": {
+    "fix01_image_single_card": {
+      "desc": "이미지 단건 명함 — Vision+AI 경로",
+      "source": "이미지",
+      "afterPushRecord": { "source": "이미지", "status": "완료", "checked": true },
+      "fields": ["회사명", "담당자", "담당직함", "전화", "휴대폰", "이메일"]
+    },
+    "fix02_image_ceo_routing": {
+      "desc": "이미지 명함 — CEO 직함 → 대표자 이동",
+      "source": "이미지",
+      "input_담당직함": "대표이사",
+      "input_담당자": "홍길동",
+      "afterNormalizePersonRouting": { "대표자": "홍길동", "담당자": "" }
+    },
+    "fix03_image_ceo_extended": {
+      "desc": "이미지 명함 — 확장 CEO 직함(사장/원장/CEO 등) → normalizePersonRouting",
+      "source": "이미지",
+      "ceo_titles": ["사장", "회장", "원장", "CEO", "공동대표", "각자대표"],
+      "afterNormalizePersonRouting": { "대표자": "NOT_EMPTY", "담당자": "" }
+    },
+    "fix04_image_tesseract_대표자": {
+      "desc": "Tesseract 경로 — parsed.대표자 → r.대표자 이관 확인",
+      "source": "이미지",
+      "path": "Tesseract",
+      "afterPushRecord": { "대표자": "NOT_EMPTY_IF_INPUT_HAS_대표자" }
+    },
+    "fix05_image_vision_parseBC_대표자": {
+      "desc": "Vision parseBusinessCard 폴백 — parsed.대표자 → r.대표자 이관 확인",
+      "source": "이미지",
+      "path": "Vision_parseBusinessCard_fallback",
+      "afterPushRecord": { "대표자": "NOT_EMPTY_IF_INPUT_HAS_대표자" }
+    },
+    "fix06_image_comma_phone": {
+      "desc": "쉼표 포함 휴대폰 추출 — '010, 2043. 8373' → '010-2043-8373'",
+      "source": "이미지",
+      "input_text": "010, 2043. 8373",
+      "expected_휴대폰": "010-2043-8373"
+    },
+    "fix07_document_multi": {
+      "desc": "문서 탭 다중 업체 — source='문서', checked=true",
+      "source": "문서",
+      "afterPushRecord": { "source": "문서", "checked": true }
+    },
+    "fix08_url_async": {
+      "desc": "URL 비동기 보강 — afterPushRecord 즉시, afterAsyncEnrichment 보강 후",
+      "source": "URL",
+      "afterPushRecord": { "source": "URL", "status": "대기", "checked": true, "웹주소": "NOT_EMPTY" },
+      "afterAsyncEnrichment": { "status": "완료", "회사명": "NOT_EMPTY" }
+    },
+    "fix09_expo_list": {
+      "desc": "전시회 탭 — source='전시회', 업체명 있음",
+      "source": "전시회",
+      "afterPushRecord": { "source": "전시회", "checked": true }
+    },
+    "fix10_qr_url": {
+      "desc": "QR URL 경로 — afterPushRecord 즉시, afterAsyncEnrichment 보강 후",
+      "source": "QR",
+      "afterPushRecord": { "source": "QR", "checked": true, "웹주소": "NOT_EMPTY" },
+      "afterAsyncEnrichment": { "회사명": "NOT_EMPTY" }
+    },
+    "fix11_empty_rec_defaults": {
+      "desc": "emptyRec 기본값 검증 — checked=true, source 전달값 반영",
+      "sources": ["이미지", "문서", "URL", "전시회", "QR"],
+      "afterEmptyRec": { "checked": true, "status": "대기" }
+    },
+    "fix12_push_record_debug": {
+      "desc": "__DEBUG_PIPELINE__ 조건부 로그 — 운영 모드에서 로그 미출력",
+      "note": "window.__DEBUG_PIPELINE__=true 설정 시 콘솔에 [PIPELINE] 로그 출력, 미설정 시 없음"
+    }
+  },
+  "learning": {
+    "empty": {
+      "desc": "OCRLearner 초기 상태 — skipWords/aliasMap/nonName 모두 빈 객체",
+      "setup": "OCRLearner.clearAll()",
+      "expected": { "skip": 0, "alias": 0, "nonName": 0 }
+    },
+    "applied": {
+      "desc": "학습 규칙 적용 후 파서 주입 확인",
+      "setup": "OCRLearner.load(); OCRLearner.augment()",
+      "expected": "SKIP_LABEL_SET에 skipWords 키가 포함됨, NON_NAME_KO에 nonName 키가 포함됨",
+      "restore": "테스트 완료 후 localStorage 백업값으로 복원 필수"
+    }
+  }
+}

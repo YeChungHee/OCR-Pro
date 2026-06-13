@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>전시회 적응형 추출 사다리 회귀 검증 (S01~S09)</title>
+<style>
+:root{--bg:#f8fafc;--card:#fff;--bdr:#e2e8f0;--txt:#0f172a;--sub:#475569;--mut:#94a3b8;--pri:#3b82f6;--grn:#16a34a;--grn-l:#dcfce7;--red:#dc2626;--red-l:#fee2e2;--yel:#ca8a04;--yel-l:#fef3c7}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt);font-size:13px;line-height:1.55}
+.wrap{max-width:1200px;margin:0 auto;padding:20px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--sub);font-size:12px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+button{font:inherit;font-weight:600;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+.summary{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-left:14px}
+.summary span b{color:var(--txt);font-weight:700;margin-left:3px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--bdr);text-align:left;vertical-align:top}
+th{background:#f1f5f9;font-weight:600;color:var(--sub);font-size:11px}
+tr.pass{background:var(--grn-l)} tr.fail{background:var(--red-l)}
+.st{font-weight:700;font-size:11px} .st.pass{color:var(--grn)} .st.fail{color:var(--red)}
+code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11.5px}
+.tiny{font-size:11px;color:var(--mut)}
+.tag{display:inline-block;background:#e0f2fe;color:#075985;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:6px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🪜 적응형 추출 사다리 회귀 검증 <span class="tag">v9.61</span></h1>
+  <div class="sub">계획서 <code>[claude]전시회_적응형추출사다리_자가업그레이드_고도화계획서_v1.0 §10</code> — ExtractionVerdict·DOM마이닝·AI셀렉터·학습 자가치유를 index.html 로직과 동일 규칙으로 검증.</div>
+  <div class="card">
+    <button id="runBtn">▶ 전체 회귀 실행</button>
+    <span class="summary" id="summary"></span>
+    <div class="tiny" style="margin-top:6px">로컬 <code>file://</code>에서 fetch 차단 시 <code>OCR-Pro-실행.command</code> 서버로 여세요.</div>
+  </div>
+  <div class="card">
+    <table id="tbl"><thead><tr>
+      <th>#</th><th>case</th><th>desc</th><th>예상 칸</th><th>실측 칸</th><th>예상 verdict</th><th>실측 verdict</th><th>건수</th><th>판정</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+</div>
+<script>
+/* ── index.html v9.61 사다리 로직 사본 (정적 회귀용) ── */
+const EXPO_GARBAGE_NAME_RE = /^(home|menu|로그인|login|회원가입|search|검색|more|자세히|다운로드|download|목록|list|이전|다음|prev|next|page|페이지|\d{4}[-./]\d{1,2}|^\d+$|all|전체|category|카테고리|booth|부스|contact|문의|sitemap|copyright|©|약관|개인정보)$/i;
+function isLikelyCompanyName(name){const s=String(name||'').trim();if(s.length<2||s.length>60)return false;if(EXPO_GARBAGE_NAME_RE.test(s))return false;if(/^[\s\-_·•|/]+$/.test(s))return false;return true;}
+function computeExtractionVerdict(companies,ctx={}){
+  const list=Array.isArray(companies)?companies:[];const companyCount=list.length;
+  const names=list.map(c=>String(c?.회사명||'').trim());const nonEmpty=names.filter(Boolean);
+  const coreFieldRate=companyCount?nonEmpty.length/companyCount:0;
+  const garbage=names.filter(n=>n&&!isLikelyCompanyName(n));const garbageRate=companyCount?garbage.length/companyCount:0;
+  const seen=new Map();nonEmpty.forEach(n=>seen.set(n,(seen.get(n)||0)+1));
+  const dupExtra=[...seen.values()].reduce((s,v)=>s+(v-1),0);const duplicateRate=nonEmpty.length?dupExtra/nonEmpty.length:0;
+  const expectedCount=Number(ctx.expectedCount)||0;const coverage=expectedCount?companyCount/expectedCount:null;
+  const reasons=[];let verdict='ok';
+  if(companyCount<1){verdict='fail';reasons.push('업체 0건');}
+  else{
+    if(coreFieldRate<0.9){verdict='partial';reasons.push('회사명 확보율 낮음');}
+    if(garbageRate>0.3){verdict='fail';reasons.push('비업체 토큰 과다');}
+    if(duplicateRate>0.4){verdict=(verdict==='fail'?'fail':'partial');reasons.push('중복 과다');}
+    if(coverage!==null&&coverage<0.7){verdict=(verdict==='fail'?'fail':'partial');reasons.push('coverage 낮음');}
+  }
+  return{verdict,companyCount,coreFieldRate,garbageRate,duplicateRate,coverage,reasons};
+}
+function sameHostAsList(u,baseUrl){try{return new URL(u).hostname.replace(/^www\./,'')===new URL(baseUrl).hostname.replace(/^www\./,'');}catch(_){return false;}}
+const EXPO_GENERIC_LINK_RE=/^(홈페이지|homepage|home|more|자세히|상세|detail|view|보기|바로가기|link|website|사이트|웹사이트|go|선택|이동|click|here)$/i;
+function pickMinedCompanyName(node){
+  const heading=node.querySelector('h1,h2,h3,h4,h5,strong,b');
+  if(heading){const t=heading.textContent.replace(/\s+/g,' ').trim();if(isLikelyCompanyName(t))return t;}
+  const anchor=node.querySelector('a');
+  if(anchor){const t=anchor.textContent.replace(/\s+/g,' ').trim();if(t&&!EXPO_GENERIC_LINK_RE.test(t)&&isLikelyCompanyName(t))return t;}
+  return(node.textContent||'').replace(/\s+/g,' ').trim();
+}
+function sliceBalancedLiteral(str,start){
+  const open=str[start];const close=open==='{'?'}':open==='['?']':'';if(!close)return'';
+  let depth=0,inStr=false,esc=false;
+  for(let i=start;i<str.length;i++){const ch=str[i];
+    if(inStr){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inStr=false;continue;}
+    if(ch==='"'){inStr=true;continue;}
+    if(ch===open)depth++;else if(ch===close){depth--;if(depth===0)return str.slice(start,i+1);}}
+  return'';
+}
+function mineRepeatingCompanyBlocks(html,baseUrl){
+  if(!html)return{companies:[],strategyConfig:null};
+  let doc;try{doc=new DOMParser().parseFromString(html,'text/html');}catch(_){return{companies:[],strategyConfig:null};}
+  const MIN=8;const containers=new Map();
+  doc.querySelectorAll('*').forEach(parent=>{
+    const kids=Array.from(parent.children||[]);if(kids.length<MIN)return;
+    const sc={};kids.forEach(k=>{const sig=k.tagName+'.'+(k.className||'').toString().trim().split(/\s+/)[0];sc[sig]=(sc[sig]||0)+1;});
+    const top=Object.entries(sc).sort((a,b)=>b[1]-a[1])[0];
+    if(top&&top[1]>=MIN){const matched=kids.filter(k=>(k.tagName+'.'+(k.className||'').toString().trim().split(/\s+/)[0])===top[0]);containers.set(parent,{sig:top[0],children:matched});}
+  });
+  let best=null;
+  containers.forEach((info)=>{
+    const companies=info.children.map(node=>{
+      let name=pickMinedCompanyName(node);
+      if(name.length>60)name=name.slice(0,60).trim();
+      const anchor=node.querySelector('a');const href=anchor?.getAttribute('href')||'';let web='';
+      if(href&&!/^javascript:|^#|^mailto:/i.test(href)){try{web=new URL(href,baseUrl).href;}catch(_){}}
+      return{회사명:name,웹주소:/^https?:/i.test(web)&&!sameHostAsList(web,baseUrl)?web:''};
+    }).filter(c=>isLikelyCompanyName(c.회사명));
+    const v=computeExtractionVerdict(companies);
+    const score=(v.verdict==='ok'?100:v.verdict==='partial'?50:0)+companies.length;
+    if(companies.length>=MIN&&(!best||score>best.score))best={companies,score,verdict:v,sig:info.sig};
+  });
+  if(!best)return{companies:[],strategyConfig:null};
+  return{companies:best.companies,strategyConfig:{strategy:'dom_mining',listSelector:best.sig},verdict:best.verdict};
+}
+function applyInferredSelectors(html,baseUrl,cfg){
+  let doc;try{doc=new DOMParser().parseFromString(html,'text/html');}catch(_){return[];}
+  let units=[];try{units=Array.from(doc.querySelectorAll(cfg.listSelector));}catch(_){return[];}
+  return units.map(node=>{
+    let name='';if(cfg.nameSelector){try{name=(node.querySelector(cfg.nameSelector)?.textContent||'').trim();}catch(_){}}
+    if(!name)name=(node.querySelector('a,h1,h2,h3,h4,strong')?.textContent||node.textContent||'').replace(/\s+/g,' ').trim();
+    if(name.length>60)name=name.slice(0,60).trim();
+    let web='',linkEl=null;if(cfg.linkSelector){try{linkEl=node.querySelector(cfg.linkSelector);}catch(_){}}
+    linkEl=linkEl||node.querySelector('a');const href=linkEl?.getAttribute('href')||'';
+    if(href&&!/^javascript:|^#|^mailto:/i.test(href)){try{web=new URL(href,baseUrl).href;}catch(_){}}
+    return{회사명:name,웹주소:(web&&!sameHostAsList(web,baseUrl))?web:''};
+  }).filter(c=>isLikelyCompanyName(c.회사명));
+}
+function tryInlineJson(html){
+  const pats=[/window\.__(?:DATA|INIT_STATE|STATE|STORE|NEXT_DATA|NUXT|initialData|pageData|exhibitors?)\w*\s*=\s*([{[])/,/var\s+(?:exhibitors?|companies|listData)\s*=\s*([{[])/];
+  for(const p of pats){const m=p.exec(html);if(!m)continue;const start=m.index+m[0].length-1;const lit=sliceBalancedLiteral(html,start);if(!lit)continue;
+    try{const parsed=JSON.parse(lit);const arr=Array.isArray(parsed)?parsed:(parsed.data||parsed.list||parsed.items||parsed.exhibitors||parsed.companies);if(Array.isArray(arr)&&arr.length)return arr;}catch(_){}}
+  return null;
+}
+function normalizeAPICompanies(arr){
+  return arr.map(it=>{const name=it.companyName||it.company||it.name||it.회사명||'';if(!name)return null;
+    return{회사명:name,웹주소:it.homepage||it.website||it.url||'',이메일:it.email||'',부스번호:it.boothNo||''};}).filter(Boolean);
+}
+/* ── 사다리 시뮬레이터 (정적 분기만; 동적 fetch·실 Gemini 제외) ── */
+function simulateLadder(html,baseUrl,c){
+  // 칸2: inline JSON
+  const inline=tryInlineJson(html);
+  if(inline){const companies=normalizeAPICompanies(inline);const v=computeExtractionVerdict(companies);if(v.verdict!=='fail')return{rung:'json_api',companies,verdict:v};}
+  // 칸0: 학습 프리셋 (S09 stale 시뮬)
+  if(c.mode==='learned_stale'&&c.staleConfig){const companies=applyInferredSelectors(html,baseUrl,c.staleConfig);const v=computeExtractionVerdict(companies);if(v.verdict==='ok')return{rung:c.staleConfig.strategy,companies,verdict:v};/* 실패 → invalidate → 아래로 */}
+  // 칸4: AI mock
+  if(c.mode==='ai_mock'&&c.aiMockConfig){const companies=applyInferredSelectors(html,baseUrl,c.aiMockConfig);const v=computeExtractionVerdict(companies);if(v.verdict==='ok')return{rung:'ai_selector',companies,verdict:v};}
+  // 칸3: DOM 마이닝
+  const mined=mineRepeatingCompanyBlocks(html,baseUrl);
+  if(mined.companies.length){const v=computeExtractionVerdict(mined.companies);if(v.verdict==='ok')return{rung:'dom_mining',companies:mined.companies,verdict:v};
+    return{rung:'manual',companies:[],verdict:v};} // 마이닝됐지만 fail(S08) → 채택 거부
+  return{rung:'manual',companies:[],verdict:{verdict:'fail',companyCount:0,reasons:['모든 칸 실패']}};
+}
+async function runAll(){
+  const res=await fetch('fixtures/expo_site_cases/cases.json').catch(()=>null);
+  if(!res||!res.ok){alert('cases.json 로드 실패 — 서버로 여세요');return;}
+  const {cases}=await res.json();const results=[];
+  for(const c of cases){
+    let html='';try{html=await (await fetch('fixtures/expo_site_cases/'+c.fixture)).text();}catch(e){results.push({c,pass:false,note:'fixture 로드 실패'});continue;}
+    const out=simulateLadder(html,c.baseUrl,c);
+    const reasons=[];
+    if(c.expectedRung&&out.rung!==c.expectedRung)reasons.push(`칸 mismatch (예상 ${c.expectedRung}/실측 ${out.rung})`);
+    if(c.expectedVerdict&&out.verdict.verdict!==c.expectedVerdict)reasons.push(`verdict mismatch (예상 ${c.expectedVerdict}/실측 ${out.verdict.verdict})`);
+    if(typeof c.expectedMinCompanies==='number'&&out.companies.length<c.expectedMinCompanies)reasons.push(`건수 부족 ${out.companies.length}<${c.expectedMinCompanies}`);
+    if(typeof c.expectedMaxCompanies==='number'&&out.companies.length>c.expectedMaxCompanies)reasons.push(`건수 초과 ${out.companies.length}>${c.expectedMaxCompanies}`);
+    results.push({c,out,pass:reasons.length===0,note:reasons.join(' · ')});
+  }
+  render(results);
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+function render(rs){
+  document.querySelector('#tbl tbody').innerHTML=rs.map((r,i)=>`<tr class="${r.pass?'pass':'fail'}">
+    <td>${i+1}</td><td><b>${esc(r.c.caseId)}</b></td><td>${esc(r.c.desc)}</td>
+    <td>${esc(r.c.expectedRung||'')}</td><td>${esc(r.out?.rung||'')}</td>
+    <td>${esc(r.c.expectedVerdict||'')}</td><td>${esc(r.out?.verdict?.verdict||'')}</td>
+    <td>${r.out?.companies?.length??''}</td>
+    <td class="st ${r.pass?'pass':'fail'}">${r.pass?'✅ PASS':'❌ FAIL'}${r.note?`<div class="tiny" style="font-weight:400;color:var(--sub)">${esc(r.note)}</div>`:''}</td></tr>`).join('');
+  const pass=rs.filter(r=>r.pass).length;
+  document.querySelector('#summary').innerHTML=`<span>총<b>${rs.length}</b></span> <span style="color:var(--grn)">PASS<b>${pass}</b></span> <span style="color:var(--red)">FAIL<b>${rs.length-pass}</b></span>`;
+}
+document.getElementById('runBtn').addEventListener('click',runAll);
+</script>
+</body>
+</html>

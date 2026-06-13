@@ -1,0 +1,51 @@
+{
+  "_comment": "OCR Pro fixture 실행 결과 — v9.36 파이프라인 12종 + v9.60 expo_email 15종",
+  "_note": "이 파일은 verify-expo-email-fixtures.html(expo_email) 또는 runLearningFixtures()(pipeline) 실행 결과로 채워집니다",
+  "_generated": "2026-04-27",
+  "_updated": "2026-05-21",
+  "expo_email": {
+    "_verified": "2026-06-13 (v9.63 도메인일치 +40 보정 후 verify-expo-email-fixtures.html 브라우저 실행)",
+    "_result": "15/15 PASS",
+    "E01_list_email":          { "status": "PASS", "확정": 85 },
+    "E02_detail_email":        { "status": "PASS", "확정": 85 },
+    "E03_mailto":              { "status": "PASS", "확정": 100 },
+    "E04_homepage_contact":    { "status": "PASS", "확정": 80 },
+    "E05_obfuscated_email":    { "status": "PASS", "확정": 85 },
+    "E06_encoded_email":       { "status": "PASS", "확정": 85 },
+    "E07_image_email":         { "status": "PASS", "후보": 62, "note": "OCR stub — 후보 등급" },
+    "E08_brochure_email":      { "status": "PASS", "후보": 65, "note": "PDF stub — 후보 등급" },
+    "E09_privacy_only":        { "status": "PASS", "낮음": 35 },
+    "E10_recruit_only":        { "status": "PASS", "낮음": 35 },
+    "E11_contact_form_only":   { "status": "PASS", "문의폼": 0 },
+    "E12_multiple_emails":     { "status": "PASS", "확정": 80, "note": "sales@ 우선 선택 확인" },
+    "E13_domain_mismatch":     { "status": "PASS", "낮음": 15, "note": "mismatch+검수플래그" },
+    "E14_api_email":           { "status": "PASS", "낮음": 20, "note": "KIMES exhiCodiEmail mismatch+검수" },
+    "E15_no_email":            { "status": "PASS", "없음": 0 }
+  },
+  "expo_site_ladder": {
+    "_verified": "2026-06-13 (verify-expo-site-ladder.html 브라우저 실행)",
+    "_result": "8/8 PASS",
+    "S01_static_table": { "status": "PASS" }, "S02_inline_json": { "status": "PASS" },
+    "S04_spa_empty": { "status": "PASS" }, "S05_irregular_cards": { "status": "PASS" },
+    "S06_ai_mock": { "status": "PASS" }, "S07_empty_list": { "status": "PASS" },
+    "S08_garbage_names": { "status": "PASS" }, "S09_learned_stale": { "status": "PASS" }
+  },
+  "pipeline": {
+    "fix01_image_single_card": { "status": "PENDING" },
+    "fix02_image_ceo_routing": { "status": "PENDING" },
+    "fix03_image_ceo_extended": { "status": "PENDING" },
+    "fix04_image_tesseract_대표자": { "status": "PENDING" },
+    "fix05_image_vision_parseBC_대표자": { "status": "PENDING" },
+    "fix06_image_comma_phone": { "status": "PENDING" },
+    "fix07_document_multi": { "status": "PENDING" },
+    "fix08_url_async": { "status": "PENDING" },
+    "fix09_expo_list": { "status": "PENDING" },
+    "fix10_qr_url": { "status": "PENDING" },
+    "fix11_empty_rec_defaults": { "status": "PENDING" },
+    "fix12_push_record_debug": { "status": "PENDING" }
+  },
+  "learning": {
+    "empty": { "status": "PENDING" },
+    "applied": { "status": "PENDING" }
+  }
+}
