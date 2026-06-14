@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.64 — SmartTech 전용 어댑터</title>
+<title>OCR Pro v9.65 — SmartTech GET 추출 수정</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.64</span>
+  <span class="ver">v9.65</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -8361,28 +8361,17 @@ function isSmartTechUrl(url) {
   try { return /(^|\.)smarttechkorea\.com$/i.test(new URL(url).hostname); } catch (_) { return false; }
 }
 
-/* 폼 인코딩 POST 를 Worker 프록시(또는 직접) 경유로 전송하고 응답 텍스트 반환 */
-async function expoPostFragment(targetUrl, formObj) {
-  const body = Object.entries(formObj)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v == null ? '' : v)}`).join('&');
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' };
-  const workerUrl = getWorkerUrl();
-  if (workerUrl) {
-    const base = workerUrl.replace(/\/$/, '');
-    const payload = JSON.stringify({ url: targetUrl, method: 'POST', headers, body });
-    for (const ep of [`${base}/proxy`, base]) {
-      try {
-        const res = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
-        if (res.ok) return await res.text();
-      } catch (_) {}
-    }
-    return '';
+/* GET 요청을 fetchWebpageHTML(공개 프록시) 경유로 전송 + 내용 검증 후 재시도
+   ★ v9.65: SmartTech는 POST/Worker 없이 GET 쿼리스트링으로 동일 응답을 주므로
+   다른 전시회와 동일한 fetchWebpageHTML 경로 사용. 공개 프록시의 일시적 522 등은 재시도로 흡수. */
+async function smartTechFetch(targetUrl, validate, tries = 4) {
+  for (let t = 0; t < tries; t++) {
+    if (expoAborted) return '';
+    let html = null;
+    try { html = await fetchWebpageHTML(targetUrl); } catch (_) {}
+    if (html && html.length > 200 && !/error code:\s*5\d\d/i.test(html) && validate(html)) return html;
+    await sleep(400 + t * 500);
   }
-  // Worker 미설정 — 직접 호출 (file:// 또는 CORS 허용 환경)
-  try {
-    const res = await fetch(targetUrl, { method: 'POST', headers, body });
-    if (res.ok) return await res.text();
-  } catch (_) {}
   return '';
 }
 
@@ -8438,44 +8427,42 @@ function parseSmartTechList(html) {
   return out;
 }
 
+function smartTechListUrl(pg) {
+  return 'https://biz.smarttechkorea.com/biz/get_panel_com.asp'
+    + `?MY_LANG=KOR&BIZ_IDX=COM_0&PAGE=${pg}&PAGE_SIZE=9`;
+}
+function smartTechDetailUrl(comId) {
+  return 'https://biz.smarttechkorea.com/biz/_include/_layer_profile_all.asp?BIZIDX=' + encodeURIComponent(comId);
+}
+const _smartTechListOk   = h => /COM_\d+|panel-empty-message|해당 조건의 업체가 없습니다/.test(h);
+const _smartTechDetailOk = h => /Company Name|회사명|profile|company_thum/i.test(h);
+
 async function fetchSmartTechExhibitors(url, opts = {}) {
-  const origin = 'https://biz.smarttechkorea.com';
-  const listUrl   = origin + '/biz/get_panel_com.asp?MY_LANG=KOR';
-  const detailUrl = origin + '/biz/_include/_layer_profile_all.asp';
-  if (location.protocol === 'https:' && !getWorkerUrl()) {
-    throw new Error('SmartTech 추출은 Cloudflare Worker URL이 필요합니다 (POST 프록시 경유). ⚙️ 설정에서 Worker URL을 입력하세요.');
-  }
   const maxPagesLimit = opts.maxPages || 999;
   const delayMs = opts.delayMs || 400;
-  const baseForm = {
-    S_KEY: '', PAGE_SIZE: 9, BIZ_IDX: 'COM_0',
-    MY_CATE: '', MY_Industry_type: '', MY_Industry: '', MY_Country: '', MY_inout: '', SH_TYPE: '',
-    FLT_HALL_TYPE: '', FLT_BOOTH_HALL: '', SH_CATE1: '', SH_TEXT: '',
-    SH_Industry_type: '', SH_Industry: '', SH_Country: '', SH_inout: ''
-  };
 
-  // ── 1단계: 목록 페이지 순회 ──
+  // ── 1단계: 목록 페이지 순회 (GET) ──
   updateExpoProgress('🔍 SmartTech 목록 1페이지 조회...', 0, 0);
-  const first = await expoPostFragment(listUrl, { ...baseForm, PAGE: 1 });
-  if (!first) throw new Error('SmartTech 목록을 가져오지 못했습니다 (Worker 응답 없음 — Worker URL/네트워크 확인).');
+  const first = await smartTechFetch(smartTechListUrl(1), _smartTechListOk);
+  if (!first) throw new Error('SmartTech 목록을 가져오지 못했습니다 — 공개 프록시 일시 오류일 수 있으니 잠시 후 재시도하세요.');
   const meta = (first.split('<!--pager-->')[1] || '').trim().split('|');
   let totalPage = Math.min(parseInt(meta[1], 10) || 1, maxPagesLimit);
   const listItems = parseSmartTechList(first);
   for (let pg = 2; pg <= totalPage; pg++) {
     if (expoAborted) break;
     updateExpoProgress(`🔍 SmartTech 목록 ${pg}/${totalPage} (누적 ${listItems.length})`, pg, totalPage);
-    const h = await expoPostFragment(listUrl, { ...baseForm, PAGE: pg });
+    const h = await smartTechFetch(smartTechListUrl(pg), _smartTechListOk);
     listItems.push(...parseSmartTechList(h));
     await sleep(delayMs);
   }
 
-  // ── 2단계: 업체별 상세 프로필 ──
+  // ── 2단계: 업체별 상세 프로필 (GET) ──
   const companies = [];
   for (let i = 0; i < listItems.length; i++) {
     if (expoAborted) break;
     const it = listItems[i];
     updateExpoProgress(`🔗 SmartTech 상세 ${i + 1}/${listItems.length}`, i, listItems.length);
-    const dh = await expoPostFragment(detailUrl, { BIZIDX: it._comId });
+    const dh = await smartTechFetch(smartTechDetailUrl(it._comId), _smartTechDetailOk, 3);
     const prof = dh ? parseSmartTechProfile(dh) : {};
     companies.push({
       회사명: prof.회사명 || '',
@@ -8838,6 +8825,19 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.65",
+    date: "2026-06-14 14:00",
+    title: "SmartTech 추출 수정 — POST/Worker → GET 공개프록시",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "SmartTech 추출 0건 실패 수정 — 목록/상세를 POST+Worker 대신 GET 쿼리스트링으로 호출 (BIZ_IDX=COM_0&PAGE=N). 동일 응답을 주며 Worker URL 없이 동작" },
+      { type: "fix", text: "다른 전시회와 동일한 fetchWebpageHTML(공개 프록시) 경로 사용 + 내용 검증 후 재시도 — 공개 프록시 일시 522 오류를 흡수" }
+    ],
+    learnLog: [
+      { text: "SmartTech get_panel_com.asp/_layer_profile_all.asp는 POST뿐 아니라 GET 쿼리스트링도 동일 응답. GET이면 Worker 없이 공개 CORS 프록시로 추출 가능하므로 POST+Worker보다 견고함. 공개 프록시는 일시 522가 잦아 내용검증+재시도 필수" }
+    ]
+  },
   {
     version: "v9.64",
     date: "2026-06-14 11:00",
