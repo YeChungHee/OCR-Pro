@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.63 — 전시회 적응형 추출 사다리</title>
+<title>OCR Pro v9.64 — SmartTech 전용 어댑터</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.63</span>
+  <span class="ver">v9.64</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -8350,6 +8350,148 @@ async function registerCompanies(allCompanies, includeDetail, delayMs, detailHtm
   return totalAdded;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   🏛 SmartTech (biz.smarttechkorea.com) 전용 어댑터 (v9.64)
+   2단계 HTML-fragment POST API:
+     목록  POST /biz/get_panel_com.asp  (BIZ_IDX=COM_0 필수, PAGE 순회)
+     상세  POST /biz/_include/_layer_profile_all.asp  (BIZIDX=COM_id)
+   응답은 JSON이 아니라 <li>/표 HTML 조각 → 전용 파서로 처리
+   ══════════════════════════════════════════════════════════════════ */
+function isSmartTechUrl(url) {
+  try { return /(^|\.)smarttechkorea\.com$/i.test(new URL(url).hostname); } catch (_) { return false; }
+}
+
+/* 폼 인코딩 POST 를 Worker 프록시(또는 직접) 경유로 전송하고 응답 텍스트 반환 */
+async function expoPostFragment(targetUrl, formObj) {
+  const body = Object.entries(formObj)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v == null ? '' : v)}`).join('&');
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' };
+  const workerUrl = getWorkerUrl();
+  if (workerUrl) {
+    const base = workerUrl.replace(/\/$/, '');
+    const payload = JSON.stringify({ url: targetUrl, method: 'POST', headers, body });
+    for (const ep of [`${base}/proxy`, base]) {
+      try {
+        const res = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+        if (res.ok) return await res.text();
+      } catch (_) {}
+    }
+    return '';
+  }
+  // Worker 미설정 — 직접 호출 (file:// 또는 CORS 허용 환경)
+  try {
+    const res = await fetch(targetUrl, { method: 'POST', headers, body });
+    if (res.ok) return await res.text();
+  } catch (_) {}
+  return '';
+}
+
+/* "http://https://..." 이중 스킴 / 스킴 누락 정규화 */
+function normalizeDoubleScheme(u) {
+  let s = String(u || '').trim();
+  if (!s || s === '-') return '';
+  s = s.replace(/^https?:\/\/(https?:\/\/)/i, '$1');
+  if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
+  return s;
+}
+
+/* 상세 레이어(_layer_profile_all.asp)의 <th>라벨</th><td>값</td> 표 파싱 */
+function parseSmartTechProfile(html) {
+  const rec = {};
+  let doc; try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (_) { return rec; }
+  const map = {};
+  doc.querySelectorAll('tr').forEach(tr => {
+    const th = tr.querySelector('th'); const td = tr.querySelector('td');
+    if (!th || !td) return;
+    const label = th.textContent.replace(/\s+/g, ' ').trim().toLowerCase();
+    const val = td.textContent.replace(/ /g, ' ').replace(/\s+/g, ' ').trim().replace(/^-$/, '');
+    if (label && !(label in map)) map[label] = val;
+  });
+  const pick = (...keys) => {
+    for (const k of keys) { const hit = Object.keys(map).find(l => l.includes(k)); if (hit && map[hit] && map[hit] !== '-') return map[hit]; }
+    return '';
+  };
+  rec.회사명 = pick('company name', '회사명');
+  rec.대표자 = pick('president', '대표자');
+  rec.주소   = pick('address', '주소');
+  rec.웹주소 = normalizeDoubleScheme(pick('website', '홈페이지', 'homepage'));
+  rec.이메일 = pick('대표이메일', 'e-mail', 'email', '이메일');
+  rec.부스번호 = pick('booth', '부스');
+  rec._expoIndustryText = pick('show', '전시');
+  return rec;
+}
+
+/* 목록 패널(get_panel_com.asp)의 <li id="COM_..."> 항목 파싱 */
+function parseSmartTechList(html) {
+  const out = [];
+  let doc; try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (_) { return out; }
+  doc.querySelectorAll('li[id^="COM_"], li.panel_codes').forEach(li => {
+    const id = li.id || '';
+    if (!/^COM_\d+/.test(id)) return;
+    if (out.some(o => o._comId === id)) return;
+    out.push({
+      _comId: id,
+      부스번호: (li.querySelector('.booth-no')?.textContent || '').trim(),
+      _expoIndustryText: (li.querySelector('.hall-type-badge')?.textContent || '').replace(/\s+/g, ' ').trim()
+    });
+  });
+  return out;
+}
+
+async function fetchSmartTechExhibitors(url, opts = {}) {
+  const origin = 'https://biz.smarttechkorea.com';
+  const listUrl   = origin + '/biz/get_panel_com.asp?MY_LANG=KOR';
+  const detailUrl = origin + '/biz/_include/_layer_profile_all.asp';
+  if (location.protocol === 'https:' && !getWorkerUrl()) {
+    throw new Error('SmartTech 추출은 Cloudflare Worker URL이 필요합니다 (POST 프록시 경유). ⚙️ 설정에서 Worker URL을 입력하세요.');
+  }
+  const maxPagesLimit = opts.maxPages || 999;
+  const delayMs = opts.delayMs || 400;
+  const baseForm = {
+    S_KEY: '', PAGE_SIZE: 9, BIZ_IDX: 'COM_0',
+    MY_CATE: '', MY_Industry_type: '', MY_Industry: '', MY_Country: '', MY_inout: '', SH_TYPE: '',
+    FLT_HALL_TYPE: '', FLT_BOOTH_HALL: '', SH_CATE1: '', SH_TEXT: '',
+    SH_Industry_type: '', SH_Industry: '', SH_Country: '', SH_inout: ''
+  };
+
+  // ── 1단계: 목록 페이지 순회 ──
+  updateExpoProgress('🔍 SmartTech 목록 1페이지 조회...', 0, 0);
+  const first = await expoPostFragment(listUrl, { ...baseForm, PAGE: 1 });
+  if (!first) throw new Error('SmartTech 목록을 가져오지 못했습니다 (Worker 응답 없음 — Worker URL/네트워크 확인).');
+  const meta = (first.split('<!--pager-->')[1] || '').trim().split('|');
+  let totalPage = Math.min(parseInt(meta[1], 10) || 1, maxPagesLimit);
+  const listItems = parseSmartTechList(first);
+  for (let pg = 2; pg <= totalPage; pg++) {
+    if (expoAborted) break;
+    updateExpoProgress(`🔍 SmartTech 목록 ${pg}/${totalPage} (누적 ${listItems.length})`, pg, totalPage);
+    const h = await expoPostFragment(listUrl, { ...baseForm, PAGE: pg });
+    listItems.push(...parseSmartTechList(h));
+    await sleep(delayMs);
+  }
+
+  // ── 2단계: 업체별 상세 프로필 ──
+  const companies = [];
+  for (let i = 0; i < listItems.length; i++) {
+    if (expoAborted) break;
+    const it = listItems[i];
+    updateExpoProgress(`🔗 SmartTech 상세 ${i + 1}/${listItems.length}`, i, listItems.length);
+    const dh = await expoPostFragment(detailUrl, { BIZIDX: it._comId });
+    const prof = dh ? parseSmartTechProfile(dh) : {};
+    companies.push({
+      회사명: prof.회사명 || '',
+      웹주소: prof.웹주소 || '',
+      이메일: prof.이메일 || '',
+      대표자: prof.대표자 || '',
+      주소:   prof.주소 || '',
+      부스번호: prof.부스번호 || it.부스번호 || '',
+      _expoIndustryText: prof._expoIndustryText || it._expoIndustryText || '',
+      _detailUrl: null   // 상세는 이미 파싱 완료 — registerCompanies 의 추가 GET 조회 방지
+    });
+    if (i % 4 === 0) await sleep(delayMs);
+  }
+  return companies.filter(c => (c.회사명 && c.회사명 !== '-') || c.웹주소);
+}
+
 /* 메인 수집 함수 (다중 포맷 라우터) */
 async function fetchAllExhibitors() {
   const url = $('#expoUrl').value.trim();
@@ -8405,6 +8547,21 @@ async function fetchAllExhibitors() {
     // ════════════════════════════════════════
     // HTML 포맷 (테이블 파싱 + API 탐색 + Gemini fallback)
     // ════════════════════════════════════════
+
+    // ── 0단계: 호스트 전용 어댑터 (v9.64: SmartTech — 동적 POST 패널형) ──
+    if (isSmartTechUrl(url)) {
+      updateFormatBadge('api');
+      toast('🏛 SmartTech 전용 어댑터 — 목록+상세 2단계 POST 수집', 'info');
+      const companies = await fetchSmartTechExhibitors(url, { maxPages: maxPagesLimit, delayMs });
+      const v = computeExtractionVerdict(companies, {});
+      if (v.verdict === 'fail') throw new Error('SmartTech 추출 실패 — ' + v.reasons.join(', '));
+      ExpoSiteLearner.save(url, { strategy: 'smarttech_panel', source: 'preset' }, v);
+      toast(`📋 ${companies.length}개 수집 · ${formatExtractionVerdict(v)} · ${includeDetail ? '이메일 추적 중...' : '등록 중...'}`, 'success');
+      totalAdded = await registerCompanies(companies, includeDetail, delayMs);
+      updateExpoProgress(buildExpoCompletionText(totalAdded), totalAdded, totalAdded);
+      toast(`🏛 ${totalAdded}개 참가업체 등록 완료! ${formatExpoEmailStats(lastExpoEmailStats)}`, 'success');
+      return;
+    }
 
     // ── 1단계: 1페이지 가져와서 구조 파악 ──
     updateExpoProgress('🔍 페이지 구조 분석 중...', 0, 0);
@@ -8681,6 +8838,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.64",
+    date: "2026-06-14 11:00",
+    title: "SmartTech(스마트테크코리아) 전용 어댑터",
+    dot: "feat",
+    items: [
+      { type: "feat", text: "biz.smarttechkorea.com 동적 POST 패널형 사이트 전용 어댑터 — 정적 HTML이 비어있어 기존 방식으로 추출 불가하던 문제 해결" },
+      { type: "feat", text: "2단계 수집: get_panel_com.asp(목록 POST, BIZ_IDX=COM_0 + PAGE 순회) → _layer_profile_all.asp(업체별 상세 POST, BIZIDX)" },
+      { type: "feat", text: "상세 프로필 th/td 표 파서 — 회사명·대표자·주소·웹주소·대표이메일·부스·전시쇼 추출, 웹주소 이중 스킴(http://https://) 정규화" },
+      { type: "improve", text: "Worker POST 프록시 경유 폼 전송(expoPostFragment) — 수집된 웹주소는 v9.60 이메일 헌터로 홈페이지 이메일까지 추적" }
+    ],
+    learnLog: [
+      { text: "동적 AJAX 사이트는 JS-전 HTML이 비어있어 DOM마이닝/AI로 안 잡힘 → 실제 목록 API(get_panel_com.asp)와 파라미터(BIZ_IDX=COM_0 필수)를 역설계해 호스트 전용 어댑터로 처리해야 함. 응답이 JSON이 아니라 HTML 조각인 ASP 패널형 사이트 패턴" }
+    ]
+  },
   {
     version: "v9.63",
     date: "2026-06-13 20:00",
