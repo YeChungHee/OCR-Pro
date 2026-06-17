@@ -78,7 +78,7 @@ body{margin:0;background:var(--bg);color:var(--txt)}
 @keyframes barPulse{from{width:15%}to{width:85%}}
 .tbl-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow-x:auto;margin-bottom:12px}
 .tbl-wrap.hidden{display:none}
-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1980px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:2280px}
 thead{background:var(--card2);position:sticky;top:0;z-index:2}
 .sm-col{display:block;font-size:9px;font-weight:400;color:var(--mut);margin-top:1px;letter-spacing:-.01em}
 th{padding:9px 8px;text-align:left;font-weight:600;color:var(--sub);font-size:11px;border-bottom:2px solid var(--bdr);white-space:nowrap}
@@ -571,20 +571,21 @@ if(location.protocol==="file:"){
 <table>
 <thead><tr>
   <th style="width:32px"><input type="checkbox" class="ck" id="ckAll"/></th>
+  <th style="width:62px">확인</th>
   <th style="width:44px">출처</th>
-  <th style="min-width:130px">회사명<span class="sm-col">Organization - 이름</span></th>
-  <th style="min-width:105px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
-  <th style="min-width:80px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
-  <th style="min-width:80px">담당직원<span class="sm-col">People - 이름</span></th>
-  <th style="min-width:90px">직함<span class="sm-col">People - 직함</span></th>
-  <th style="min-width:105px">휴대폰<span class="sm-col">People - 전화</span></th>
-  <th style="min-width:105px">일반전화<span class="sm-col">Organization - 전화</span></th>
-  <th style="min-width:145px">이메일<span class="sm-col">People - 이메일</span></th>
-  <th style="min-width:120px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
-  <th style="min-width:160px">주소<span class="sm-col">Organization - 주소</span></th>
-  <th style="min-width:120px">업종<span class="sm-col">Organization - 업종</span></th>
-  <th style="min-width:140px">아이템<span class="sm-col">Organization - 아이템</span></th>
-  <th style="min-width:90px">영문명<span class="sm-col">검수 참고</span></th>
+  <th style="min-width:150px">회사명<span class="sm-col">Organization - 이름</span></th>
+  <th style="min-width:115px">사업자번호<span class="sm-col">Organization - 사업자번호</span></th>
+  <th style="min-width:90px">대표자명<span class="sm-col">Organization - 대표자명</span></th>
+  <th style="min-width:90px">담당직원<span class="sm-col">People - 이름</span></th>
+  <th style="min-width:100px">직함<span class="sm-col">People - 직함</span></th>
+  <th style="min-width:115px">휴대폰<span class="sm-col">People - 전화</span></th>
+  <th style="min-width:115px">일반전화<span class="sm-col">Organization - 전화</span></th>
+  <th style="min-width:180px">이메일<span class="sm-col">People - 이메일</span></th>
+  <th style="min-width:160px">웹 주소<span class="sm-col">Organization - 웹 주소</span></th>
+  <th style="min-width:220px">주소<span class="sm-col">Organization - 주소</span></th>
+  <th style="min-width:160px">업종<span class="sm-col">Organization - 업종</span></th>
+  <th style="min-width:170px">아이템<span class="sm-col">Organization - 아이템</span></th>
+  <th style="min-width:100px">영문명<span class="sm-col">검수 참고</span></th>
   <th style="min-width:55px">신뢰도</th>
   <th style="width:52px">상태</th>
   <th style="width:50px"></th>
@@ -2344,6 +2345,10 @@ function render(){
 
     return `<tr data-id="${r.id}"${r._dupOf?' style="background:#fffbeb"':r.status==="진행"?' style="background:var(--pri-l)"':r._biznoVerified==='mismatch'?' style="background:#fff7ed"':''}>
       <td><input type="checkbox" class="ck rck" ${r.checked?"checked":""} data-id="${r.id}"/></td>
+      <td style="white-space:nowrap;text-align:center">
+        <button class="gsearch-btn" data-id="${r.id}" title="구글 검색 열기">🔍</button>
+        <button class="bizno-verify-btn btn-xs" data-id="${r.id}" title="구글 검색으로 사업자번호 교차검증" style="font-size:10px;padding:3px 6px;border-radius:5px;margin-left:2px">🔄</button>
+      </td>
       <td style="white-space:nowrap">${thumbHtml}</td>
       <td contenteditable="true" class="editable" data-field="회사명" data-id="${r.id}">${esc(r.회사명)}${dupBadge}</td>
       ${r.사업자번호
@@ -2363,9 +2368,7 @@ function render(){
       <td contenteditable="true" class="editable" data-field="영문명" data-id="${r.id}" style="font-size:11px;color:var(--sub)">${esc(r.영문명)}</td>
       <td>${relH}</td>
       <td><span class="st ${stCls}">${stIcon} ${esc(r.status)}</span></td>
-      <td style="white-space:nowrap">
-        <button class="gsearch-btn" data-id="${r.id}" title="구글 검색 열기">🔍</button>
-        <button class="bizno-verify-btn btn-xs" data-id="${r.id}" title="구글 검색으로 사업자번호 교차검증" style="font-size:10px;padding:3px 6px;border-radius:5px;margin-left:2px">🔄</button>
+      <td style="white-space:nowrap;text-align:center">
         <button class="rm-btn" data-id="${r.id}" title="삭제">✕</button>
       </td>
     </tr>`}).join("");
