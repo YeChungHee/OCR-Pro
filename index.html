@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OCR Pro v9.65 — SmartTech GET 추출 수정</title>
+<title>OCR Pro v9.66 — 문서 명함(리멤버) 이름·직함 라우팅</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='85'>📋</text></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -199,7 +199,7 @@ td.bizno-empty:focus::before{content:""}
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 2H15L17 5H21C21.55 5 22 5.45 22 6V20C22 20.55 21.55 21 21 21H3C2.45 21 2 20.55 2 20V6C2 5.45 2.45 5 3 5H7L9 2ZM12 19C15.31 19 18 16.31 18 13C18 9.69 15.31 7 12 7C8.69 7 6 9.69 6 13C6 16.31 8.69 19 12 19Z"/></svg></div>
   <h1>OCR Pro</h1>
-  <span class="ver">v9.65</span>
+  <span class="ver">v9.66</span>
   <button id="apiTestBtn" class="btn-xs" style="margin-left:auto" title="API 연결 상태 확인">🔌 연결 테스트</button>
   <button id="changelogBtn" class="btn-xs" style="background:var(--grn-l);color:var(--grn);border-color:var(--grn)" title="버전별 업데이트 이력 및 OCR 학습 로그">📋 업데이트</button>
   <button id="settingsBtn" class="btn-xs" style="background:var(--vio-l);color:var(--vio);border-color:var(--vio)" title="API 키 설정">⚙️ 설정</button>
@@ -4669,8 +4669,8 @@ const COL_MAP={
                 "Organization - 사업자번호"],
   "대표자":    ["대표","대표자","대표이사","대표자명","ceo","representative",
                 "Organization - 대표자명","Organization - 대표자"],
-  "담당자":    ["담당자","담당","담당직원","연락담당","contact person",
-                "Organization - 담당직원"],
+  "담당자":    ["담당자","담당","담당직원","연락담당","contact person","이름","성명","name",
+                "Organization - 담당직원","People - 이름"],   /* ★ v9.66: "이름/성명/name" 추가 — 리멤버 명함첩 등 이름 컬럼 매핑 */
   "담당직함":  ["직함","담당직함","직위","title","position",
                 "Organization - 담당직함",
                 "People - 직함"],
@@ -4678,11 +4678,11 @@ const COL_MAP={
                 "Organization - 전화"],   /* ★ v9.61: "일반전화" alias 추가 */
   "휴대폰":   ["휴대폰","핸드폰","모바일","휴대전화","mobile","cell",
                 "People - 전화"],
-  "이메일":   ["이메일","메일","email","e-mail",
+  "이메일":   ["이메일","메일","email","e-mail","전자 메일 주소","전자메일주소","전자우편",
                 "People - 이메일",
-                "Organization - 대표 이메일(계산서)"],
-  "주소":     ["주소","소재지","address","사업장주소",
-                "Organization - 주소"],
+                "Organization - 대표 이메일(계산서)"],   /* ★ v9.66: 리멤버 "전자 메일 주소" 명시 */
+  "주소":     ["주소","소재지","address","사업장주소","근무지 주소 번지","근무지주소","근무지 주소",
+                "Organization - 주소"],   /* ★ v9.66: 리멤버 "근무지 주소 번지" 명시 — "전자 메일 주소" 오매핑 방지 */
   "웹주소":   ["웹주소","홈페이지","웹사이트","url","website","web","홈페이지주소",
                 "Organization - 웹 주소"],
   "업종":     ["업종","업태","industry","사업종류"],
@@ -4718,12 +4718,25 @@ function mapColumns(headers){
     for(const h of headers){
       if(isSalesmapHeader(h)) continue;
       const lh=h.toLowerCase().trim();
+      /* ★ v9.66: "주소" alias 가 "전자 메일 주소" 같은 이메일 헤더를 잡지 않도록 가드 */
+      if(field==="주소" && /메일|mail|e-?mail/i.test(lh)) continue;
       if(aliases.some(a=>lh.includes(a.toLowerCase()))){
         mapping[field]=h;break;
       }
     }
   }
   return mapping;
+}
+
+/* ★ v9.66: 대표 직함 판정 — 대표/대표이사/CEO/사장 '포함'(Co-Founder & CEO 등)을 인정하되
+   부사장·부대표·부회장 등 부(副) 직함과 학회 '회장'은 제외 */
+function isRepTitle(title){
+  const t = String(title||"").trim();
+  if(!t) return false;
+  const g = t.replace(/부\s*사장|부\s*대표|부\s*회장|부\s*원장|부\s*소장/g, "");
+  if(/대표|사장/.test(g)) return true;
+  if(/ceo/i.test(g)) return true;
+  return false;
 }
 
 function sheetRowToRec(row,colMap,src){
@@ -4743,6 +4756,15 @@ function sheetRowToRec(row,colMap,src){
   /* ★ v9.61: 전화 컬럼에 010 번호가 들어온 경우 → 휴대폰으로 재라우팅 */
   if (r.전화 && !r.휴대폰 && typeof isMobile === "function" && isMobile(r.전화)) {
     r.휴대폰 = r.전화; r.전화 = "";
+  }
+  /* ★ v9.66: 이름/직함 → 대표자·담당직원 라우팅 (리멤버 명함첩 등)
+     직함이 대표류 → 이름을 대표자명 + 담당직원 양쪽에, 직함은 "대표"로 통일
+     그 외 → 담당직원+직함 유지(대표자명 비움) */
+  const _nm = r.담당자;
+  if (_nm && isRepTitle(r.담당직함)) {
+    r.대표자 = r.대표자 || _nm;
+    r.담당자 = _nm;
+    r.담당직함 = "대표";
   }
   r.status="완료";
   r.신뢰도=calcReliability(r);
@@ -8832,6 +8854,21 @@ function setExpoFile(file) {
    📋 업데이트 이력 모달
    ═══════════════════════════════════════════════════ */
 const CHANGELOG = [
+  {
+    version: "v9.66",
+    date: "2026-06-19 12:00",
+    title: "문서 명함(리멤버) 이름·직함 라우팅 + 주소 매핑 수정",
+    dot: "fix",
+    items: [
+      { type: "fix", text: "엑셀 '이름' 컬럼이 어디에도 매핑 안 돼 대표자명·담당직원이 비던 문제 수정 — COL_MAP 담당자에 '이름/성명/name' 별칭 추가" },
+      { type: "feat", text: "직함이 대표/대표이사/CEO/사장(포함 매칭, 'Co-Founder & CEO' 등) → 이름을 대표자명 + 담당직원 양쪽에, 직함은 '대표'로 통일" },
+      { type: "feat", text: "부사장·부대표·부회장 등 부(副) 직함과 학회 '회장'은 대표에서 제외(isRepTitle 가드)" },
+      { type: "fix", text: "'주소' 컬럼이 '전자 메일 주소'(이메일)를 substring으로 오매핑하던 버그 수정 — 리멤버 '근무지 주소 번지' 명시 + 메일 헤더 가드" }
+    ],
+    learnLog: [
+      { text: "리멤버 명함첩 엑셀 컬럼(회사/이름/부서/직함/전자 메일 주소/근무지 주소 번지/휴대폰)에 맞춰 문서 파이프라인 매핑·라우팅 정비. 이름/직함 라우팅은 sheetRowToRec 단계에서 확정해 render·SalesMap 출력과 일관 유지" }
+    ]
+  },
   {
     version: "v9.65",
     date: "2026-06-14 14:00",
